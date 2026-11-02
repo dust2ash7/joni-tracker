@@ -27,6 +27,7 @@ type Data = {
   doses: Dose[];
   notes: Record<string, DayNote>;
   settings: Settings;
+  seeds: string[];
 };
 
 type Store = Data & {
@@ -55,6 +56,96 @@ const defaultSettings: Settings = {
   unit: "oz",
   theme: "system",
 };
+
+/** Nov 2, 2026 clock times from the discharge sheet, as Pacific (UTC−8). */
+function pacific(hour: number, minute: number) {
+  return Date.UTC(2026, 10, 2, hour + 8, minute);
+}
+
+const DISCHARGE_SEED = "discharge-2026-11-02";
+
+const dischargeMeds: Medication[] = [
+  {
+    id: "med-acetaminophen",
+    name: "Acetaminophen",
+    dose: "2 tablets · 500 mg",
+    frequency: { kind: "every", hours: 6 },
+    notes: "As needed for pain or fever. Do not exceed 6 tablets in 24 hours.",
+    active: true,
+  },
+  {
+    id: "med-ibuprofen",
+    name: "Ibuprofen",
+    dose: "1 tablet · 600 mg",
+    frequency: { kind: "every", hours: 6 },
+    notes: "As needed for pain. Take with food.",
+    active: true,
+  },
+  {
+    id: "med-oxycodone",
+    name: "Oxycodone",
+    dose: "1 tablet · 5 mg",
+    frequency: { kind: "every", hours: 4 },
+    notes: "As needed for pain.",
+    active: true,
+  },
+  {
+    id: "med-clearlax",
+    name: "ClearLax",
+    dose: "17 g",
+    frequency: { kind: "every", hours: 12 },
+    notes: "As needed for constipation, up to twice a day. Mix in a non-carbonated liquid.",
+    active: true,
+  },
+  {
+    id: "med-prenatal",
+    name: "Prenatal",
+    dose: "1 capsule",
+    frequency: { kind: "times", times: ["08:00"] },
+    notes: "Once a day. Change the time if 8:00am isn’t when you take it.",
+    active: true,
+  },
+];
+
+const dischargeDoses: Dose[] = [
+  {
+    id: "dose-acetaminophen-1",
+    medId: "med-acetaminophen",
+    name: "Acetaminophen",
+    dose: "2 tablets · 500 mg",
+    at: pacific(8, 31),
+  },
+  {
+    id: "dose-ibuprofen-1",
+    medId: "med-ibuprofen",
+    name: "Ibuprofen",
+    dose: "1 tablet · 600 mg",
+    at: pacific(7, 31),
+  },
+  {
+    id: "dose-oxycodone-1",
+    medId: "med-oxycodone",
+    name: "Oxycodone",
+    dose: "1 tablet · 5 mg",
+    at: pacific(1, 33),
+  },
+];
+
+function withDischargeSeed(data: Partial<Data>) {
+  const seeds = data.seeds ?? [];
+  const meds = data.meds ?? [];
+  const doses = data.doses ?? [];
+  if (seeds.includes(DISCHARGE_SEED)) return { meds, doses, seeds };
+  const medIds = new Set(dischargeMeds.map((med) => med.id));
+  const doseIds = new Set(dischargeDoses.map((dose) => dose.id));
+  return {
+    meds: [...dischargeMeds, ...meds.filter((med) => !medIds.has(med.id))],
+    doses: [...dischargeDoses, ...doses.filter((dose) => !doseIds.has(dose.id))],
+    seeds: [...seeds, DISCHARGE_SEED],
+  };
+}
+
+const seeded = withDischargeSeed({});
 
 let pendingUndo: (() => void) | null = null;
 
@@ -115,9 +206,10 @@ export const useTracker = create<Store>()(
     (set, get) => ({
       feeds: [],
       diapers: [],
-      meds: [],
-      doses: [],
+      meds: seeded.meds,
+      doses: seeded.doses,
       notes: {},
+      seeds: seeded.seeds,
       settings: defaultSettings,
       toast: null,
       addFeed: (input) => {
@@ -302,16 +394,19 @@ export const useTracker = create<Store>()(
         doses: state.doses,
         notes: state.notes,
         settings: state.settings,
+        seeds: state.seeds,
       }),
       merge: (persisted, current) => {
         const data = (persisted ?? {}) as Partial<Data>;
+        const next = withDischargeSeed(data);
         return {
           ...current,
           feeds: data.feeds ?? [],
           diapers: data.diapers ?? [],
-          meds: data.meds ?? [],
-          doses: data.doses ?? [],
+          meds: next.meds,
+          doses: next.doses,
           notes: data.notes ?? {},
+          seeds: next.seeds,
           settings: { ...defaultSettings, ...data.settings },
         };
       },
