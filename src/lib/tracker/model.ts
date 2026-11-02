@@ -42,6 +42,8 @@ export type MedFrequency =
   | { kind: "times"; times: string[] }
   | { kind: "asneeded" };
 
+export type MedWho = "mom" | "baby";
+
 export type Medication = {
   id: string;
   name: string;
@@ -49,6 +51,7 @@ export type Medication = {
   frequency: MedFrequency;
   notes: string;
   active: boolean;
+  who?: MedWho;
 };
 
 export type MedInput = Omit<Medication, "id">;
@@ -59,7 +62,12 @@ export type Dose = {
   name: string;
   dose: string;
   at: number;
+  who?: MedWho;
 };
+
+export function medWho(med: { who?: MedWho }): MedWho {
+  return med.who === "baby" ? "baby" : "mom";
+}
 
 export type Mood = "rough" | "tender" | "steady" | "bright";
 
@@ -468,6 +476,7 @@ export function buildTimeline(
   doses: Dose[],
   start: number,
   end: number,
+  babyName = "Joni",
 ) {
   const items: TimelineItem[] = [];
   for (const feed of feeds) {
@@ -499,7 +508,7 @@ export function buildTimeline(
       at: dose.at,
       kind: "dose",
       title: dose.name,
-      detail: dose.dose,
+      detail: [dose.who === "baby" ? babyName : "Alex", dose.dose].filter(Boolean).join(" · "),
       dose,
     });
   }
@@ -537,10 +546,11 @@ export function daySummary(input: {
     const extra = [diaperMeta(diaper), diaper.notes].filter(Boolean).join(" · ");
     lines.push(`• ${formatTime(diaper.at)}  ${diaperTitle(diaper.kind)}${extra ? ` · ${extra}` : ""}`);
   }
-  lines.push("", `Mom meds (${doses.length})`);
+  lines.push("", `Meds (${doses.length})`);
   if (!doses.length) lines.push("None");
   for (const dose of doses) {
-    lines.push(`• ${formatTime(dose.at)}  ${dose.name}${dose.dose ? ` · ${dose.dose}` : ""}`);
+    const person = dose.who === "baby" ? input.babyName : "Alex";
+    lines.push(`• ${formatTime(dose.at)}  ${person} · ${dose.name}${dose.dose ? ` · ${dose.dose}` : ""}`);
   }
   if (input.note?.mood || input.note?.text.trim()) {
     lines.push("", "Note");

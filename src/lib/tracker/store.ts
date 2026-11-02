@@ -152,6 +152,20 @@ const dischargeDoses: Dose[] = [
   },
 ];
 
+const BABY_SEED = "baby-d3-2026-11-02";
+
+const babyMeds: Medication[] = [
+  {
+    id: "med-vitamin-d3",
+    name: "Super Daily D3",
+    dose: "1 drop · 10 mcg (400 IU)",
+    frequency: { kind: "times", times: ["08:00"] },
+    notes: "For Joni. Give 1 drop by mouth once a day. Change the time if 8:00am isn’t when you give it.",
+    active: true,
+    who: "baby",
+  },
+];
+
 function withDischargeSeed(data: Partial<Data>) {
   let seeds = data.seeds ?? [];
   let meds = data.meds ?? [];
@@ -167,6 +181,11 @@ function withDischargeSeed(data: Partial<Data>) {
     const have = new Set(meds.map((med) => med.id));
     meds = [...extraMeds.filter((med) => !have.has(med.id)), ...meds];
     seeds = [...seeds, EXTRA_SEED];
+  }
+  if (!seeds.includes(BABY_SEED)) {
+    const have = new Set(meds.map((med) => med.id));
+    meds = [...meds, ...babyMeds.filter((med) => !have.has(med.id))];
+    seeds = [...seeds, BABY_SEED];
   }
   return { meds, doses, seeds };
 }
@@ -226,6 +245,7 @@ function cleanMed(input: MedInput): MedInput | null {
     frequency,
     notes: input.notes.trim(),
     active: input.active,
+    who: input.who === "baby" ? "baby" : "mom",
   };
 }
 
@@ -340,6 +360,7 @@ export const useTracker = create<Store>()(
           name: med.name,
           dose: med.dose,
           at: when,
+          who: med.who === "baby" ? "baby" : "mom",
         };
         pendingUndo = () => set((state) => ({ doses: state.doses.filter((item) => item.id !== dose.id) }));
         set((state) => ({ doses: [dose, ...state.doses], toast: toastOf(`${med.name} marked taken`, true) }));

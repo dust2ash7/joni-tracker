@@ -35,12 +35,15 @@ import {
   isSameDay,
   lastDose,
   latest,
+  medWho,
   onDay,
   scheduledMeds,
   startOfDay,
   type Diaper,
   type Dose,
+  type DueInfo,
   type Feed,
+  type Medication,
 } from "@/lib/tracker/model";
 import { useTracker } from "@/lib/tracker/store";
 import type { Composer, TabId } from "@/components/joni/types";
@@ -68,6 +71,52 @@ function QuickButton({
   );
 }
 
+function DueCard({
+  label,
+  item,
+  doses,
+  now,
+  open,
+}: {
+  label: string;
+  item: { med: Medication; due: DueInfo };
+  doses: Dose[];
+  now: number;
+  open: (composer: Composer) => void;
+}) {
+  const last = lastDose(item.med.id, doses);
+  const hot = isHot(item.due.status);
+  return (
+    <article className={`mt-3 rounded-3xl bg-paper p-4 ring-1 ${hot ? "ring-clay" : "ring-line"}`}>
+      <p className="text-sm text-muted">{label}</p>
+      <div className="mt-2 flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-serif text-2xl font-medium">{item.med.name}</p>
+          <p className="mt-1 text-sm text-muted">
+            {[item.med.dose, frequencyLabel(item.med.frequency)].filter(Boolean).join(" · ")}
+          </p>
+        </div>
+        <p className={`shrink-0 text-right text-sm font-medium tabular-nums ${hot ? "text-clay" : "text-sage"}`}>
+          {dueLabel(item.due, now)}
+        </p>
+      </div>
+      <p className="mt-2 text-sm text-muted">{last ? `Last given ${formatTime(last.at)}` : "Not given yet"}</p>
+      <div className="mt-3 grid gap-2">
+        <PrimaryButton tone={hot ? "clay" : "sage"} onClick={() => useTracker.getState().markDose(item.med.id)}>
+          Mark given
+        </PrimaryButton>
+        <button
+          type="button"
+          onClick={() => open({ kind: "dose-time", medId: item.med.id })}
+          className="min-h-11 text-sm font-medium text-sage"
+        >
+          Different time
+        </button>
+      </div>
+    </article>
+  );
+}
+
 export function TodayScreen({
   now,
   open,
@@ -84,8 +133,10 @@ export function TodayScreen({
   const doses = useTracker((state) => state.doses);
   const lastFeed = latest(feeds);
   const lastDiaper = latest(diapers);
-  const upcoming = scheduledMeds(meds, doses, now)[0];
-  const events = buildTimeline(feeds, diapers, doses, startOfDay(now), endOfDay(now));
+  const ranked = scheduledMeds(meds, doses, now);
+  const upcoming = ranked.find((item) => medWho(item.med) === "mom");
+  const babyNext = ranked.find((item) => medWho(item.med) === "baby");
+  const events = buildTimeline(feeds, diapers, doses, startOfDay(now), endOfDay(now), babyName);
 
   function quickMed() {
     const active = useTracker.getState().meds.filter((med) => med.active);
@@ -178,7 +229,7 @@ export function TodayScreen({
                 Different time
               </button>
             </div>
-            {scheduledMeds(meds, doses, now).length > 1 ? (
+            {ranked.filter((item) => medWho(item.med) === "mom").length > 1 ? (
               <button type="button" onClick={() => go("meds")} className="mt-1 min-h-11 text-sm text-muted">
                 See all meds
               </button>
@@ -194,6 +245,16 @@ export function TodayScreen({
           </>
         )}
       </article>
+
+      {babyNext ? (
+        <DueCard
+          label={`For ${babyName}`}
+          item={babyNext}
+          doses={doses}
+          now={now}
+          open={open}
+        />
+      ) : null}
 
       <h2 className="mt-8 font-serif text-xl font-medium">Today</h2>
       {events.length === 0 ? (
@@ -335,16 +396,21 @@ export function DiapersScreen({ now, open }: { now: number; open: (composer: Com
 }
 
 export function MedsScreen({ now, open }: { now: number; open: (composer: Composer) => void }) {
+  const babyName = useTracker((state) => state.settings.babyName.trim() || "Joni");
   const meds = useTracker((state) => state.meds);
   const doses = useTracker((state) => state.doses);
   const active = scheduledMeds(meds, doses, now);
   const paused = meds.filter((med) => !med.active);
+  const groups = [
+    { label: "Alex", items: active.filter((item) => medWho(item.med) === "mom") },
+    { label: babyName, items: active.filter((item) => medWho(item.med) === "baby") },
+  ];
 
   return (
     <div>
       <TopBar
-        title="Mom meds"
-        sub="Reminders only. Not medical advice."
+        title="Meds"
+        sub="Alex’s list and Joni’s drops stay separate. Reminders only."
         onSettings={() => open({ kind: "settings" })}
       />
       <div className="mt-4">
@@ -358,41 +424,55 @@ export function MedsScreen({ now, open }: { now: number; open: (composer: Compos
           />
         </div>
       ) : null}
-      <div className="mt-4 grid gap-3">
-        {active.map(({ med, due }) => {
-          const last = lastDose(med.id, doses);
-          const hot = isHot(due.status);
-          return (
-            <article key={med.id} className={`rounded-3xl bg-paper p-4 ring-1 ${hot ? "ring-clay" : "ring-line"}`}>
-              <button type="button" onClick={() => open({ kind: "med", med })} className="w-full text-left">
-                <div className="flex items-start justify-between gap-3">
-                  <h2 className="font-serif text-2xl font-medium">{med.name}</h2>
-                  <span className={`shrink-0 text-sm font-medium tabular-nums ${hot ? "text-clay" : "text-sage"}`}>
-                    {dueLabel(due, now)}
-                  </span>
-                </div>
-                <p className="mt-1 text-sm text-muted">{[med.dose, frequencyLabel(med.frequency)].filter(Boolean).join(" · ")}</p>
-                <p className="mt-2 text-sm text-muted">
-                  {last ? `Last taken ${formatAgo(last.at, now)} · ${formatTime(last.at)}` : "Not taken yet"}
-                </p>
-                {med.notes ? <p className="mt-2 text-sm text-pretty text-muted">{med.notes}</p> : null}
-              </button>
-              <div className="mt-3 grid gap-2">
-                <PrimaryButton tone={hot ? "clay" : "sage"} onClick={() => useTracker.getState().markDose(med.id)}>
-                  Mark taken
-                </PrimaryButton>
-                <button
-                  type="button"
-                  onClick={() => open({ kind: "dose-time", medId: med.id })}
-                  className="min-h-11 text-sm font-medium text-sage"
-                >
-                  Different time
-                </button>
-              </div>
-            </article>
-          );
-        })}
-      </div>
+      {groups.map((group) =>
+        group.items.length ? (
+          <section key={group.label} className="mt-6">
+            <h2 className="font-serif text-xl font-medium">{group.label}</h2>
+            <div className="mt-3 grid gap-3">
+              {group.items.map(({ med, due }) => {
+                const last = lastDose(med.id, doses);
+                const hot = isHot(due.status);
+                const baby = medWho(med) === "baby";
+                return (
+                  <article key={med.id} className={`rounded-3xl bg-paper p-4 ring-1 ${hot ? "ring-clay" : "ring-line"}`}>
+                    <button type="button" onClick={() => open({ kind: "med", med })} className="w-full text-left">
+                      <div className="flex items-start justify-between gap-3">
+                        <h3 className="font-serif text-2xl font-medium">{med.name}</h3>
+                        <span className={`shrink-0 text-sm font-medium tabular-nums ${hot ? "text-clay" : "text-sage"}`}>
+                          {dueLabel(due, now)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm text-muted">
+                        {[med.dose, frequencyLabel(med.frequency)].filter(Boolean).join(" · ")}
+                      </p>
+                      <p className="mt-2 text-sm text-muted">
+                        {last
+                          ? `${baby ? "Last given" : "Last taken"} ${formatAgo(last.at, now)} · ${formatTime(last.at)}`
+                          : baby
+                            ? "Not given yet"
+                            : "Not taken yet"}
+                      </p>
+                      {med.notes ? <p className="mt-2 text-sm text-pretty text-muted">{med.notes}</p> : null}
+                    </button>
+                    <div className="mt-3 grid gap-2">
+                      <PrimaryButton tone={hot ? "clay" : "sage"} onClick={() => useTracker.getState().markDose(med.id)}>
+                        {baby ? "Mark given" : "Mark taken"}
+                      </PrimaryButton>
+                      <button
+                        type="button"
+                        onClick={() => open({ kind: "dose-time", medId: med.id })}
+                        className="min-h-11 text-sm font-medium text-sage"
+                      >
+                        Different time
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        ) : null,
+      )}
       {paused.length > 0 ? (
         <>
           <h2 className="mt-8 font-serif text-xl font-medium">Paused</h2>
@@ -406,7 +486,9 @@ export function MedsScreen({ now, open }: { now: number; open: (composer: Compos
               >
                 <span>
                   <span className="block font-medium">{med.name}</span>
-                  <span className="text-sm text-muted">{med.dose || "No dose written"}</span>
+                  <span className="text-sm text-muted">
+                    {[medWho(med) === "baby" ? babyName : "Alex", med.dose || "No dose written"].join(" · ")}
+                  </span>
                 </span>
                 <span className="text-sm text-muted">Paused</span>
               </button>
@@ -434,7 +516,7 @@ export function LogScreen({ now, open }: { now: number; open: (composer: Compose
   const dayFeeds = onDay(feeds, day);
   const dayDiapers = onDay(diapers, day);
   const dayDoses = onDay(doses, day);
-  const events = buildTimeline(feeds, diapers, doses, startOfDay(day), endOfDay(day)).filter((event) =>
+  const events = buildTimeline(feeds, diapers, doses, startOfDay(day), endOfDay(day), settings.babyName.trim() || "Joni").filter((event) =>
     filter === "all" ? true : event.kind === filter,
   );
   const counts = diaperCounts(dayDiapers);

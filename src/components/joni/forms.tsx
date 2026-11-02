@@ -17,6 +17,7 @@ import {
   type FeedType,
   type MedFrequency,
   type Medication,
+  type MedWho,
   type Unit,
 } from "@/lib/tracker/model";
 import { useTracker } from "@/lib/tracker/store";
@@ -359,6 +360,8 @@ export function MedForm({ initial, onDone }: { initial?: Medication; onDone: () 
   const [dose, setDose] = useState(initial?.dose ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [active, setActive] = useState(initial?.active ?? true);
+  const [who, setWho] = useState<MedWho>(initial?.who === "baby" ? "baby" : "mom");
+  const babyName = useTracker((state) => state.settings.babyName.trim() || "Joni");
   const [mode, setMode] = useState<MedFrequency["kind"]>(initial?.frequency.kind ?? "every");
   const [hours, setHours] = useState(initial?.frequency.kind === "every" ? initial.frequency.hours : 6);
   const [times, setTimes] = useState<string[]>(
@@ -384,6 +387,7 @@ export function MedForm({ initial, onDone }: { initial?: Medication; onDone: () 
       dose,
       notes,
       active,
+      who,
       frequency:
         mode === "every"
           ? ({ kind: "every", hours } as const)
@@ -442,6 +446,27 @@ export function MedForm({ initial, onDone }: { initial?: Medication; onDone: () 
           autoComplete="off"
         />
       </label>
+      <div>
+        <p className="mb-2 text-sm text-muted">Who is this for?</p>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            aria-pressed={who === "mom"}
+            onClick={() => setWho("mom")}
+            className={`min-h-12 rounded-2xl text-sm font-medium ${choiceClass(who === "mom")}`}
+          >
+            Alex
+          </button>
+          <button
+            type="button"
+            aria-pressed={who === "baby"}
+            onClick={() => setWho("baby")}
+            className={`min-h-12 rounded-2xl text-sm font-medium ${choiceClass(who === "baby")}`}
+          >
+            {babyName}
+          </button>
+        </div>
+      </div>
       <div>
         <p className="mb-2 text-sm text-muted">Schedule</p>
         <div className="grid grid-cols-2 gap-2">
@@ -798,6 +823,7 @@ export function DoseTimeSheet({ medId, onClose }: { medId: string; onClose: () =
 
 export function PickMedSheet({ onClose }: { onClose: () => void }) {
   const meds = useTracker((state) => state.meds.filter((med) => med.active));
+  const babyName = useTracker((state) => state.settings.babyName.trim() || "Joni");
   const markDose = useTracker((state) => state.markDose);
   return (
     <Sheet title="Which med?" onClose={onClose}>
@@ -813,7 +839,9 @@ export function PickMedSheet({ onClose }: { onClose: () => void }) {
             className="min-h-14 rounded-2xl bg-sage-soft px-4 text-left"
           >
             <span className="block font-medium">{med.name}</span>
-            <span className="text-sm text-muted">{[med.dose, frequencyLabel(med.frequency)].filter(Boolean).join(" · ")}</span>
+            <span className="text-sm text-muted">
+              {[med.who === "baby" ? babyName : "Alex", med.dose, frequencyLabel(med.frequency)].filter(Boolean).join(" · ")}
+            </span>
           </button>
         ))}
         {!meds.length ? <p className="text-sm text-muted">No active medications.</p> : null}
