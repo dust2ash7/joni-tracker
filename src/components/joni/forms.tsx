@@ -384,7 +384,12 @@ export function MedForm({ initial, onDone }: { initial?: Medication; onDone: () 
       dose,
       notes,
       active,
-      frequency: mode === "every" ? ({ kind: "every", hours } as const) : ({ kind: "times", times } as const),
+      frequency:
+        mode === "every"
+          ? ({ kind: "every", hours } as const)
+          : mode === "times"
+            ? ({ kind: "times", times } as const)
+            : ({ kind: "asneeded" } as const),
     };
     if (initial) updateMed(initial.id, input);
     else addMed(input);
@@ -456,6 +461,14 @@ export function MedForm({ initial, onDone }: { initial?: Medication; onDone: () 
           >
             Set times
           </button>
+          <button
+            type="button"
+            aria-pressed={mode === "asneeded"}
+            onClick={() => setMode("asneeded")}
+            className={`col-span-2 min-h-12 rounded-2xl text-sm font-medium ${choiceClass(mode === "asneeded")}`}
+          >
+            As needed
+          </button>
         </div>
       </div>
       {mode === "every" ? (
@@ -493,7 +506,7 @@ export function MedForm({ initial, onDone }: { initial?: Medication; onDone: () 
             </button>
           </div>
         </div>
-      ) : (
+      ) : mode === "times" ? (
         <div>
           <div className="flex flex-wrap gap-2">
             {times.map((time) => (
@@ -543,6 +556,8 @@ export function MedForm({ initial, onDone }: { initial?: Medication; onDone: () 
             </button>
           </div>
         </div>
+      ) : (
+        <p className="text-sm text-muted">No countdown. Mark it when you take one.</p>
       )}
       <label className="grid gap-2 text-sm text-muted">
         Note

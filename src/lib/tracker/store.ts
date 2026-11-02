@@ -107,6 +107,27 @@ const dischargeMeds: Medication[] = [
   },
 ];
 
+const EXTRA_SEED = "extra-2026-11-02";
+
+const extraMeds: Medication[] = [
+  {
+    id: "med-aspirin",
+    name: "Aspirin",
+    dose: "81 mg chew tab",
+    frequency: { kind: "asneeded" },
+    notes: "As needed.",
+    active: true,
+  },
+  {
+    id: "med-sertraline",
+    name: "Sertraline",
+    dose: "1 tablet · 25 mg",
+    frequency: { kind: "times", times: ["08:00"] },
+    notes: "Once a day. Change the time if 8:00am isn’t when you take it.",
+    active: true,
+  },
+];
+
 const dischargeDoses: Dose[] = [
   {
     id: "dose-acetaminophen-1",
@@ -132,17 +153,22 @@ const dischargeDoses: Dose[] = [
 ];
 
 function withDischargeSeed(data: Partial<Data>) {
-  const seeds = data.seeds ?? [];
-  const meds = data.meds ?? [];
-  const doses = data.doses ?? [];
-  if (seeds.includes(DISCHARGE_SEED)) return { meds, doses, seeds };
-  const medIds = new Set(dischargeMeds.map((med) => med.id));
-  const doseIds = new Set(dischargeDoses.map((dose) => dose.id));
-  return {
-    meds: [...dischargeMeds, ...meds.filter((med) => !medIds.has(med.id))],
-    doses: [...dischargeDoses, ...doses.filter((dose) => !doseIds.has(dose.id))],
-    seeds: [...seeds, DISCHARGE_SEED],
-  };
+  let seeds = data.seeds ?? [];
+  let meds = data.meds ?? [];
+  let doses = data.doses ?? [];
+  if (!seeds.includes(DISCHARGE_SEED)) {
+    const medIds = new Set(dischargeMeds.map((med) => med.id));
+    const doseIds = new Set(dischargeDoses.map((dose) => dose.id));
+    meds = [...dischargeMeds, ...meds.filter((med) => !medIds.has(med.id))];
+    doses = [...dischargeDoses, ...doses.filter((dose) => !doseIds.has(dose.id))];
+    seeds = [...seeds, DISCHARGE_SEED];
+  }
+  if (!seeds.includes(EXTRA_SEED)) {
+    const have = new Set(meds.map((med) => med.id));
+    meds = [...extraMeds.filter((med) => !have.has(med.id)), ...meds];
+    seeds = [...seeds, EXTRA_SEED];
+  }
+  return { meds, doses, seeds };
 }
 
 const seeded = withDischargeSeed({});
@@ -185,12 +211,14 @@ function cleanMed(input: MedInput): MedInput | null {
   const name = input.name.trim();
   if (!name) return null;
   const frequency =
-    input.frequency.kind === "every"
-      ? { kind: "every" as const, hours: Math.min(24, Math.max(1, Math.round(input.frequency.hours))) }
-      : {
-          kind: "times" as const,
-          times: [...new Set(input.frequency.times.filter((time) => /^\d{2}:\d{2}$/.test(time)))].sort(),
-        };
+    input.frequency.kind === "asneeded"
+      ? { kind: "asneeded" as const }
+      : input.frequency.kind === "every"
+        ? { kind: "every" as const, hours: Math.min(24, Math.max(1, Math.round(input.frequency.hours))) }
+        : {
+            kind: "times" as const,
+            times: [...new Set(input.frequency.times.filter((time) => /^\d{2}:\d{2}$/.test(time)))].sort(),
+          };
   if (frequency.kind === "times" && frequency.times.length === 0) return null;
   return {
     name,

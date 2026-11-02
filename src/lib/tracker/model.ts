@@ -39,7 +39,8 @@ export type DiaperInput = Omit<Diaper, "id">;
 
 export type MedFrequency =
   | { kind: "every"; hours: number }
-  | { kind: "times"; times: string[] };
+  | { kind: "times"; times: string[] }
+  | { kind: "asneeded" };
 
 export type Medication = {
   id: string;
@@ -79,6 +80,7 @@ export type DueInfo = {
   dueAt: number;
   status: DueStatus;
   never: boolean;
+  prn?: boolean;
 };
 
 export type TimelineItem = {
@@ -357,6 +359,7 @@ export function groupByDay<T extends { at: number }>(items: T[], now: number, li
 }
 
 export function frequencyLabel(frequency: MedFrequency) {
+  if (frequency.kind === "asneeded") return "As needed";
   if (frequency.kind === "every") {
     return frequency.hours === 1 ? "Every hour" : `Every ${frequency.hours} hours`;
   }
@@ -401,6 +404,9 @@ function slotsAround(now: number, times: string[]) {
 
 export function nextDue(med: Medication, doses: Dose[], now: number): DueInfo {
   const last = lastDose(med.id, doses);
+  if (med.frequency.kind === "asneeded") {
+    return { dueAt: Number.MAX_SAFE_INTEGER, status: "later", never: !last, prn: true };
+  }
   if (med.frequency.kind === "every") {
     const hours = Math.min(24, Math.max(1, med.frequency.hours));
     if (!last) return { dueAt: now, status: "due", never: true };
@@ -424,6 +430,7 @@ export function nextDue(med: Medication, doses: Dose[], now: number): DueInfo {
 }
 
 export function dueLabel(due: DueInfo, now: number) {
+  if (due.prn) return "As needed";
   if (due.never && (due.status === "due" || due.status === "overdue")) return "Due now";
   if (due.status === "due") return "Due now";
   const mins = Math.max(1, Math.round(Math.abs(due.dueAt - now) / 60000));
@@ -445,7 +452,10 @@ export function scheduledMeds(meds: Medication[], doses: Dose[], now: number) {
   return meds
     .filter((med) => med.active)
     .map((med) => ({ med, due: nextDue(med, doses, now) }))
-    .sort((a, b) => a.due.dueAt - b.due.dueAt);
+    .sort((a, b) => {
+      if (Boolean(a.due.prn) !== Boolean(b.due.prn)) return a.due.prn ? 1 : -1;
+      return a.due.dueAt - b.due.dueAt;
+    });
 }
 
 export function isHot(status: DueStatus) {
