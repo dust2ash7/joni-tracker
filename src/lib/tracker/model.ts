@@ -554,8 +554,8 @@ export function dosesExpectedPerDay(med: Medication) {
   return med.frequency.times.length || null;
 }
 
-function personLabel(who: MedWho | undefined, babyName: string) {
-  return who === "baby" ? babyName : "Alex";
+function personLabel(who: MedWho | undefined) {
+  return who === "baby" ? "Joni" : "Mom";
 }
 
 export function reportRows(input: {
@@ -607,7 +607,7 @@ export function reportRows(input: {
         at: dose.at,
         kind: "dose",
         typeLabel: "Med",
-        details: [who === "baby" ? input.babyName : "Mom", dose.name, dose.dose].filter(Boolean).join(" · "),
+        details: [personLabel(who), dose.name, dose.dose].filter(Boolean).join(" · "),
         notes: "",
         dose,
       });
@@ -662,7 +662,7 @@ export function adherenceRows(
     rows.push({
       id: med.id,
       name: med.name,
-      who: personLabel(med.who, babyName),
+      who: personLabel(med.who),
       active: med.active,
       taken: byDay.reduce((sum, day) => sum + day.taken, 0),
       expected: perDay == null ? null : perDay * days.length,
@@ -771,7 +771,7 @@ export function buildTimeline(
       at: dose.at,
       kind: "dose",
       title: dose.name,
-      detail: [dose.who === "baby" ? babyName : "Alex", dose.dose].filter(Boolean).join(" · "),
+      detail: [dose.who === "baby" ? "Joni" : "Mom", dose.dose].filter(Boolean).join(" · "),
       dose,
     });
   }
@@ -812,7 +812,7 @@ export function daySummary(input: {
   lines.push("", `Meds (${doses.length})`);
   if (!doses.length) lines.push("None");
   for (const dose of doses) {
-    const person = dose.who === "baby" ? input.babyName : "Alex";
+    const person = dose.who === "baby" ? "Joni" : "Mom";
     lines.push(`• ${formatTime(dose.at)}  ${person} · ${dose.name}${dose.dose ? ` · ${dose.dose}` : ""}`);
   }
   if (input.note?.mood || input.note?.text.trim()) {

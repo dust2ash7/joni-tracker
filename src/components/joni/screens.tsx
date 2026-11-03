@@ -26,6 +26,7 @@ import {
   feedTitle,
   feedTotals,
   formatAgo,
+  formatAmount,
   formatDay,
   formatDuration,
   formatLongDay,
@@ -156,7 +157,7 @@ export function TodayScreen({
       <div className="mt-4 grid grid-cols-3 gap-3">
         <QuickButton label="Feed" icon={Milk} onClick={() => open({ kind: "feed" })} />
         <QuickButton label="Diaper" icon={Droplets} onClick={() => open({ kind: "diaper" })} />
-        <QuickButton label="Med" icon={Pill} onClick={quickMed} />
+        <QuickButton label="Mom med" icon={Pill} onClick={quickMed} />
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3">
@@ -312,7 +313,7 @@ export function FeedsScreen({ now, open }: { now: number; open: (composer: Compo
         <Stat label="Time" value={totals.minutes ? `${totals.minutes}m` : "—"} />
       </div>
       <div className="mt-4">
-        <FeedForm heading="Log a feed" />
+        <FeedForm key={name} heading={`Log a feed · ${name}`} />
       </div>
       <h2 className="mt-8 font-serif text-xl font-medium">Recent</h2>
       {groups.length === 0 ? (
@@ -329,8 +330,10 @@ export function FeedsScreen({ now, open }: { now: number; open: (composer: Compo
                   key={feed.id}
                   icon={Milk}
                   title={feedTitle(feed.type)}
-                  detail={[feedMeta(feed), feed.notes].filter(Boolean).join(" · ")}
-                  time={formatTime(feed.at)}
+                  detail={[formatTime(feed.at), feed.amount && feed.unit ? formatAmount(feed.amount, feed.unit) : "", feed.notes]
+                    .filter(Boolean)
+                    .join(" · ")}
+                  time={formatDuration(feed) || formatTime(feed.at)}
                   onClick={() => open({ kind: "feed", feed })}
                 />
               ))}
@@ -362,7 +365,7 @@ export function DiapersScreen({ now, open }: { now: number; open: (composer: Com
         <Stat label="Dirty" value={String(counts.dirty)} />
       </div>
       <div className="mt-4">
-        <DiaperForm heading="Log a diaper" />
+        <DiaperForm key={name} heading={`Log a diaper · ${name}`} />
       </div>
       <h2 className="mt-8 font-serif text-xl font-medium">Recent</h2>
       {groups.length === 0 ? (
@@ -401,7 +404,7 @@ export function MedsScreen({ now, open }: { now: number; open: (composer: Compos
   const paused = meds.filter((med) => !med.active);
   const groups = [
     { label: "Mom", items: active.filter((item) => medWho(item.med) !== "baby") },
-    { label: "Joni", items: active.filter((item) => medWho(item.med) === "baby") },
+    { label: "Joni's drop", items: active.filter((item) => medWho(item.med) === "baby") },
   ];
 
   return (
