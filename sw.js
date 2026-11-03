@@ -1,7 +1,7 @@
-/* Joni Tracker service worker.
+/* Nest service worker.
    Network-first for pages, cache fallback for assets.
    Registered only in production so the live preview is not stuck on a stale shell. */
-const CACHE = "joni-tracker-v1";
+const CACHE = "nest-v1";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting());
