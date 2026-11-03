@@ -4,13 +4,16 @@ import {
   DIAPER_TAGS,
   FEED_TYPES,
   MED_PRESETS,
+  breastLabel,
   feedTitle,
   formatAgo,
   formatDuration,
   formatTimer,
   frequencyLabel,
+  isBreast,
+  lastBreast,
   latest,
-  suggestFeedType,
+  suggestNextBreast,
   type Diaper,
   type DiaperKind,
   type DiaperTag,
@@ -74,9 +77,13 @@ export function FeedForm({
   const defaultUnit = useTracker((state) => state.settings.unit);
   const { child, name, feeds } = useActiveLogs();
   const last = latest(feeds.filter((feed) => feed.id !== initial?.id));
+  const breast = lastBreast(feeds.filter((feed) => feed.id !== initial?.id));
+  const nextSide = breast && isBreast(breast.type) ? suggestNextBreast(breast.type) : null;
   const lock = useRef(0);
   const [at, setAt] = useState(initial?.at ?? Date.now());
-  const [type, setType] = useState<FeedType | null>(initial?.type ?? suggestFeedType(last));
+  const [type, setType] = useState<FeedType | null>(
+    initial?.type ?? (last && !isBreast(last.type) ? last.type : nextSide),
+  );
   const [unit, setUnit] = useState<Unit>(initial?.unit ?? defaultUnit);
   const [amount, setAmount] = useState(initial?.amount ? String(initial.amount) : "");
   const [duration, setDuration] = useState(initial?.durationMin ? String(initial.durationMin) : "");
@@ -125,7 +132,7 @@ export function FeedForm({
       addFeed(input);
       clearPending();
       setAt(Date.now());
-      setType(suggestFeedType({ ...input, id: "next", type }));
+      setType(isBreast(type) ? suggestNextBreast(type) : type);
       setAmount("");
       setDuration("");
       setDurationSec(undefined);
@@ -153,9 +160,42 @@ export function FeedForm({
         ) : null}
         <TimeField value={at} onChange={setAt} />
         <div>
-          <p className="mb-2 text-sm text-muted">Type</p>
-          <div role="radiogroup" aria-label="Feed type" className="grid grid-cols-3 gap-2">
-            {FEED_TYPES.map((item) => (
+          <p className="text-base font-medium">
+            {breast && isBreast(breast.type) ? `Last breast: ${breastLabel(breast.type)}` : "Last breast: none yet"}
+          </p>
+          {nextSide ? <p className="text-sm text-muted">Suggested next: {breastLabel(nextSide)}</p> : null}
+          <p className="mb-2 mt-3 text-sm text-muted">Side</p>
+          <div role="radiogroup" aria-label="Breast side" className="grid grid-cols-3 gap-2">
+            {FEED_TYPES.filter((item) => isBreast(item.id)).map((item) => {
+              const suggested = nextSide === item.id && type !== item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={type === item.id}
+                  onClick={() => {
+                    setType(item.id);
+                    setNeedType(false);
+                    if (running) setTimerType(item.id);
+                  }}
+                  className={`min-h-16 rounded-2xl text-base font-medium ${
+                    type === item.id
+                      ? "bg-sage text-on-sage"
+                      : suggested
+                        ? "bg-paper text-ink ring-2 ring-sage"
+                        : "bg-sage-soft text-ink"
+                  }`}
+                >
+                  {item.short}
+                  {suggested ? <span className="mt-0.5 block text-xs font-medium text-sage">Next</span> : null}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mb-2 mt-3 text-sm text-muted">Or</p>
+          <div role="radiogroup" aria-label="Other feed type" className="grid grid-cols-3 gap-2">
+            {FEED_TYPES.filter((item) => !isBreast(item.id)).map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -166,13 +206,13 @@ export function FeedForm({
                   setNeedType(false);
                   if (running) setTimerType(item.id);
                 }}
-                className={`min-h-12 rounded-2xl text-sm font-medium ${choiceClass(type === item.id)}`}
+                className={`min-h-12 rounded-2xl text-sm font-medium ${type === item.id ? "bg-sage text-on-sage" : "bg-sage-soft text-ink"}`}
               >
                 {item.short}
               </button>
             ))}
           </div>
-          {needType ? <p className="mt-2 text-sm text-clay">Choose a side, bottle, formula, or pump.</p> : null}
+          {needType ? <p className="mt-2 text-sm text-clay">Choose left, right, or both.</p> : null}
         </div>
         {!initial ? (
           <button

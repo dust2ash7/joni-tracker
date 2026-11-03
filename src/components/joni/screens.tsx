@@ -22,7 +22,8 @@ import {
   dueLabelClass,
   dueNameClass,
   endOfDay,
-  feedMeta,
+  breastLabel,
+  feedListTitle,
   feedTitle,
   feedTotals,
   formatAgo,
@@ -37,12 +38,15 @@ import {
   greeting,
   groupByDay,
   isHot,
+  isBreast,
   isSameDay,
+  lastBreast,
   lastDose,
   latest,
   medWho,
   onDay,
   scheduledMeds,
+  suggestNextBreast,
   startOfDay,
   type Diaper,
   type Dose,
@@ -135,6 +139,8 @@ export function TodayScreen({
   const doses = useTracker((state) => state.doses);
   const lastFeed = latest(feeds);
   const lastDiaper = latest(diapers);
+  const breast = lastBreast(feeds);
+  const nextSide = breast && isBreast(breast.type) ? suggestNextBreast(breast.type) : null;
   const ranked = scheduledMeds(meds, doses, now);
   const upcoming = ranked.find((item) => medWho(item.med) === "mom");
   const babyNext = ranked.find((item) => medWho(item.med) === "baby");
@@ -194,6 +200,11 @@ export function TodayScreen({
           )}
         </article>
       </div>
+
+      <p className="mt-3 rounded-2xl bg-sage-soft px-4 py-3 text-base font-medium">
+        {breast && isBreast(breast.type) ? `Last breast: ${breastLabel(breast.type)}` : "Last breast: none yet"}
+        {nextSide ? <span className="mt-0.5 block text-sm font-normal text-muted">Next: {breastLabel(nextSide)}</span> : null}
+      </p>
 
       <article
         className={`mt-3 rounded-3xl p-4 ${upcoming ? dueCardClass(upcoming.due) : "bg-paper ring-1 ring-line"}`}
@@ -329,7 +340,7 @@ export function FeedsScreen({ now, open }: { now: number; open: (composer: Compo
                 <EventButton
                   key={feed.id}
                   icon={Milk}
-                  title={feedTitle(feed.type)}
+                  title={feedListTitle(feed.type)}
                   detail={[formatTime(feed.at), feed.amount && feed.unit ? formatAmount(feed.amount, feed.unit) : "", feed.notes]
                     .filter(Boolean)
                     .join(" · ")}

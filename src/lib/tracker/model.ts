@@ -252,10 +252,42 @@ export function feedTitle(type: FeedType) {
   return FEED_TYPES.find((item) => item.id === type)?.long ?? "Feed";
 }
 
+export type BreastSide = "left" | "right" | "both";
+
+export function isBreast(type: FeedType): type is BreastSide {
+  return type === "left" || type === "right" || type === "both";
+}
+
+export function breastLabel(side: BreastSide) {
+  if (side === "left") return "Left";
+  if (side === "right") return "Right";
+  return "Both";
+}
+
+export function feedListTitle(type: FeedType) {
+  return isBreast(type) ? breastLabel(type) : feedTitle(type);
+}
+
+export function lastBreast(feeds: Feed[]) {
+  let best: Feed | undefined;
+  for (const feed of feeds) {
+    if (!isBreast(feed.type)) continue;
+    if (!best || feed.at > best.at) best = feed;
+  }
+  return best;
+}
+
+export function suggestNextBreast(side?: BreastSide | null): BreastSide | null {
+  if (side === "left") return "right";
+  if (side === "right") return "left";
+  return null;
+}
+
 export function suggestFeedType(last?: Feed): FeedType | null {
   if (!last) return null;
   if (last.type === "left") return "right";
   if (last.type === "right") return "left";
+  if (last.type === "both") return null;
   return last.type;
 }
 
@@ -748,7 +780,7 @@ export function buildTimeline(
       id: feed.id,
       at: feed.at,
       kind: "feed",
-      title: feedTitle(feed.type),
+      title: feedListTitle(feed.type),
       detail: [feedMeta(feed), feed.notes].filter(Boolean).join(" · "),
       feed,
     });
