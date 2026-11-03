@@ -19,7 +19,7 @@ import {
   reportText,
   type ReportFilter,
 } from "@/lib/tracker/model";
-import { useTracker } from "@/lib/tracker/store";
+import { useActiveLogs, useTracker } from "@/lib/tracker/store";
 import type { Composer } from "@/components/joni/types";
 import { EmptyState, TopBar, choiceClass } from "@/components/joni/ui";
 
@@ -72,12 +72,13 @@ export function OverviewScreen({ now, open }: { now: number; open: (composer: Co
   const [filter, setFilter] = useState<ReportFilter>("all");
   const [copied, setCopied] = useState(false);
   const [copyText, setCopyText] = useState("");
-  const feeds = useTracker((state) => state.feeds);
-  const diapers = useTracker((state) => state.diapers);
+  const feeds = useActiveLogs().feeds;
+  const diapers = useActiveLogs().diapers;
+  const childName = useActiveLogs().name;
   const doses = useTracker((state) => state.doses);
   const meds = useTracker((state) => state.meds);
   const unit = useTracker((state) => state.settings.unit);
-  const babyName = useTracker((state) => state.settings.babyName.trim() || "Joni");
+  const babyName = childName;
   const days = rangeDays(now, span);
   const start = days[0] ?? now;
   const end = now;
@@ -121,7 +122,7 @@ export function OverviewScreen({ now, open }: { now: number; open: (composer: Co
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "joni-overview.csv";
+    link.download = "nest-overview.csv";
     link.click();
     URL.revokeObjectURL(url);
   }
@@ -130,7 +131,7 @@ export function OverviewScreen({ now, open }: { now: number; open: (composer: Co
     <div>
       <TopBar
         title="Overview"
-        sub="The last stretch, in one place."
+        sub={`${childName}'s last stretch, in one place.`}
         onSettings={() => open({ kind: "settings" })}
       />
 
@@ -163,6 +164,15 @@ export function OverviewScreen({ now, open }: { now: number; open: (composer: Co
 
       <div className="mt-4 grid gap-3">
         <Bars title="Feeds" values={feedBars} color="bg-sage" />
+        <Bars
+          title="Feed time"
+          values={days.map((day) => ({
+            key: day,
+            label: formatWeekday(day).slice(0, 1),
+            value: feedTotals(onDay(feeds, day), unit).minutes,
+          }))}
+          color="bg-sage"
+        />
         <Bars title="Diapers" values={diaperBars} color="bg-clay" />
       </div>
 

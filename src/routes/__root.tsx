@@ -4,10 +4,10 @@ import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { PwaRuntime } from "@/components/pwa-runtime";
 import appCss from "../styles.css?url";
 
-const APP_NAME = "Joni Tracker";
+const APP_NAME = "Nest";
 const asset = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, "")}`;
 
-const THEME_BOOT = `(function(){try{var theme="system";var raw=localStorage.getItem("joni-tracker-v1");if(raw){var parsed=JSON.parse(raw);var saved=parsed&&parsed.state&&parsed.state.settings&&parsed.state.settings.theme;if(saved==="light"||saved==="dark"||saved==="system")theme=saved;}var systemDark=window.matchMedia("(prefers-color-scheme: dark)").matches;var dark=theme==="dark"||(theme==="system"&&systemDark);var root=document.documentElement;root.classList.toggle("dark",theme==="dark");root.classList.toggle("light",theme==="light");root.style.colorScheme=dark?"dark":"light";var meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.setAttribute("content",dark?"#121815":"#F4EFE6");}catch(e){}})();`;
+const THEME_BOOT = `(function(){try{var theme="system";var raw=localStorage.getItem("nest_meta")||localStorage.getItem("joni-tracker-v1");if(raw){var parsed=JSON.parse(raw);var saved=(parsed&&parsed.settings&&parsed.settings.theme)||(parsed&&parsed.state&&parsed.state.settings&&parsed.state.settings.theme);if(saved==="light"||saved==="dark"||saved==="system")theme=saved;}var systemDark=window.matchMedia("(prefers-color-scheme: dark)").matches;var dark=theme==="dark"||(theme==="system"&&systemDark);var root=document.documentElement;root.classList.toggle("dark",theme==="dark");root.classList.toggle("light",theme==="light");root.style.colorScheme=dark?"dark":"light";var meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.setAttribute("content",dark?"#121815":"#F4EFE6");}catch(e){}})();`;
 
 export const Route = createRootRoute({
   head: () => ({
@@ -17,12 +17,12 @@ export const Route = createRootRoute({
       { title: APP_NAME },
       {
         name: "description",
-        content: "A calm, private log for newborn feeds, diapers, and postpartum meds.",
+        content: "A calm log for Alex and Joni. Feeds, diapers, and mom meds stay on this phone.",
       },
       { name: "theme-color", content: "#F4EFE6" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "mobile-web-app-capable", content: "yes" },
-      { name: "apple-mobile-web-app-title", content: "Joni" },
+      { name: "apple-mobile-web-app-title", content: "Nest" },
     ],
     links: [
       { rel: "preconnect", href: "https://fonts.googleapis.com" },

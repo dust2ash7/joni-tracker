@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   DIAPER_KINDS,
   DIAPER_TAGS,
@@ -6,6 +6,8 @@ import {
   MED_PRESETS,
   feedTitle,
   formatAgo,
+  formatDuration,
+  formatTimer,
   frequencyLabel,
   latest,
   suggestFeedType,
@@ -20,7 +22,7 @@ import {
   type MedWho,
   type Unit,
 } from "@/lib/tracker/model";
-import { useTracker } from "@/lib/tracker/store";
+import { useActiveLogs, useTracker } from "@/lib/tracker/store";
 import {
   PrimaryButton,
   SecondaryButton,
@@ -63,8 +65,14 @@ export function FeedForm({
   const addFeed = useTracker((state) => state.addFeed);
   const updateFeed = useTracker((state) => state.updateFeed);
   const deleteFeed = useTracker((state) => state.deleteFeed);
+  const startTimer = useTracker((state) => state.startTimer);
+  const setTimerType = useTracker((state) => state.setTimerType);
+  const stopTimer = useTracker((state) => state.stopTimer);
+  const clearPending = useTracker((state) => state.clearPending);
+  const timer = useTracker((state) => state.timer);
+  const pending = useTracker((state) => state.pending);
   const defaultUnit = useTracker((state) => state.settings.unit);
-  const feeds = useTracker((state) => state.feeds);
+  const { child, name, feeds } = useActiveLogs();
   const last = latest(feeds.filter((feed) => feed.id !== initial?.id));
   const lock = useRef(0);
   const [at, setAt] = useState(initial?.at ?? Date.now());
@@ -72,10 +80,28 @@ export function FeedForm({
   const [unit, setUnit] = useState<Unit>(initial?.unit ?? defaultUnit);
   const [amount, setAmount] = useState(initial?.amount ? String(initial.amount) : "");
   const [duration, setDuration] = useState(initial?.durationMin ? String(initial.durationMin) : "");
+  const [durationSec, setDurationSec] = useState(initial?.durationSec);
   const [notes, setNotes] = useState(initial?.notes ?? "");
-  const [more, setMore] = useState(Boolean(initial?.amount || initial?.durationMin || initial?.notes));
+  const [more, setMore] = useState(Boolean(initial?.amount || initial?.notes));
   const [needType, setNeedType] = useState(false);
   const [armed, setArmed] = useState(false);
+  const [tick, setTick] = useState(Date.now());
+  const running = !initial && timer?.child === child;
+
+  useEffect(() => {
+    if (!running) return;
+    const id = window.setInterval(() => setTick(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [running]);
+
+  useEffect(() => {
+    if (initial || !pending || pending.child !== child) return;
+    setAt(pending.at);
+    setDurationSec(pending.durationSec);
+    setDuration(String(Math.max(1, Math.round(pending.durationSec / 60))));
+    if (pending.type) setType(pending.type);
+    setMore(true);
+  }, [pending, child, initial]);
 
   function save() {
     const now = Date.now();
@@ -91,15 +117,18 @@ export function FeedForm({
       unit,
       amount: parseAmount(amount),
       durationMin: parseAmount(duration),
+      durationSec,
       notes,
     };
     if (initial) updateFeed(initial.id, input);
     else {
       addFeed(input);
+      clearPending();
       setAt(Date.now());
       setType(suggestFeedType({ ...input, id: "next", type }));
       setAmount("");
       setDuration("");
+      setDurationSec(undefined);
       setNotes("");
       setMore(false);
     }
@@ -135,6 +164,7 @@ export function FeedForm({
                 onClick={() => {
                   setType(item.id);
                   setNeedType(false);
+                  if (running) setTimerType(item.id);
                 }}
                 className={`min-h-12 rounded-2xl text-sm font-medium ${choiceClass(type === item.id)}`}
               >
@@ -144,6 +174,42 @@ export function FeedForm({
           </div>
           {needType ? <p className="mt-2 text-sm text-clay">Choose a side, bottle, formula, or pump.</p> : null}
         </div>
+        {!initial ? (
+          <button
+            type="button"
+            onClick={() => {
+              if (running) {
+                const sec = Math.max(1, Math.round((Date.now() - (timer?.startedAt ?? Date.now())) / 1000));
+                setDurationSec(sec);
+                setDuration(String(Math.max(1, Math.round(sec / 60))));
+                if (timer?.type) setType(timer.type);
+                stopTimer();
+                return;
+              }
+              startTimer(type);
+            }}
+            className={`flex min-h-20 w-full flex-col items-center justify-center rounded-3xl text-on-sage ${running ? "bg-clay text-on-clay" : "bg-sage"}`}
+          >
+            <span className="font-serif text-4xl tabular-nums">
+              {running ? formatTimer(Math.floor((tick - (timer?.startedAt ?? tick)) / 1000)) : duration ? `${duration} min` : "0:00"}
+            </span>
+            <span className="text-sm font-medium">{running ? `Stop ${name}` : `Start timer · ${name}`}</span>
+          </button>
+        ) : null}
+        <label className="grid gap-2 text-sm text-muted">
+          Minutes
+          <input
+            className="field text-ink"
+            inputMode="numeric"
+            value={duration}
+            placeholder="Or type minutes"
+            onChange={(event) => {
+              setDuration(event.target.value.replace(/[^\d]/g, ""));
+              setDurationSec(undefined);
+            }}
+          />
+        </label>
+        {durationSec ? <p className="text-sm text-muted">{formatDuration({ durationSec })}</p> : null}
         {more ? (
           <>
             <Stepper
@@ -225,7 +291,7 @@ export function DiaperForm({
   const addDiaper = useTracker((state) => state.addDiaper);
   const updateDiaper = useTracker((state) => state.updateDiaper);
   const deleteDiaper = useTracker((state) => state.deleteDiaper);
-  const diapers = useTracker((state) => state.diapers);
+  const { diapers } = useActiveLogs();
   const last = latest(diapers.filter((diaper) => diaper.id !== initial?.id));
   const lock = useRef(0);
   const [at, setAt] = useState(initial?.at ?? Date.now());
@@ -360,8 +426,7 @@ export function MedForm({ initial, onDone }: { initial?: Medication; onDone: () 
   const [dose, setDose] = useState(initial?.dose ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [active, setActive] = useState(initial?.active ?? true);
-  const [who, setWho] = useState<MedWho>(initial?.who === "baby" ? "baby" : "mom");
-  const babyName = useTracker((state) => state.settings.babyName.trim() || "Joni");
+  const who: MedWho = initial?.who === "baby" ? "baby" : "mom";
   const [mode, setMode] = useState<MedFrequency["kind"]>(initial?.frequency.kind ?? "every");
   const [hours, setHours] = useState(initial?.frequency.kind === "every" ? initial.frequency.hours : 6);
   const [times, setTimes] = useState<string[]>(
@@ -446,27 +511,6 @@ export function MedForm({ initial, onDone }: { initial?: Medication; onDone: () 
           autoComplete="off"
         />
       </label>
-      <div>
-        <p className="mb-2 text-sm text-muted">Who is this for?</p>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            aria-pressed={who === "mom"}
-            onClick={() => setWho("mom")}
-            className={`min-h-12 rounded-2xl text-sm font-medium ${choiceClass(who === "mom")}`}
-          >
-            Alex
-          </button>
-          <button
-            type="button"
-            aria-pressed={who === "baby"}
-            onClick={() => setWho("baby")}
-            className={`min-h-12 rounded-2xl text-sm font-medium ${choiceClass(who === "baby")}`}
-          >
-            {babyName}
-          </button>
-        </div>
-      </div>
       <div>
         <p className="mb-2 text-sm text-muted">Schedule</p>
         <div className="grid grid-cols-2 gap-2">
@@ -645,32 +689,12 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
   const settings = useTracker((state) => state.settings);
   const setSettings = useTracker((state) => state.setSettings);
   const eraseAll = useTracker((state) => state.eraseAll);
-  const [name, setName] = useState(settings.babyName);
   const [armed, setArmed] = useState(false);
 
-  function commitName() {
-    setSettings({ babyName: name.trim() || "Joni" });
-  }
-
   return (
-    <Sheet
-      title="Settings"
-      onClose={() => {
-        commitName();
-        onClose();
-      }}
-    >
+    <Sheet title="Settings" onClose={onClose}>
       <div className="grid gap-4">
-        <label className="grid gap-2 text-sm text-muted">
-          Baby’s name
-          <input
-            className="field text-ink"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            onBlur={commitName}
-            maxLength={40}
-          />
-        </label>
+        <p className="text-sm text-muted">Alex and Joni each keep their own feeds and diapers. Mom meds stay shared.</p>
         <div>
           <p className="mb-2 text-sm text-muted">Volume unit</p>
           <div className="grid grid-cols-2 gap-2">
@@ -823,7 +847,6 @@ export function DoseTimeSheet({ medId, onClose }: { medId: string; onClose: () =
 
 export function PickMedSheet({ onClose }: { onClose: () => void }) {
   const meds = useTracker((state) => state.meds.filter((med) => med.active));
-  const babyName = useTracker((state) => state.settings.babyName.trim() || "Joni");
   const markDose = useTracker((state) => state.markDose);
   return (
     <Sheet title="Which med?" onClose={onClose}>
@@ -840,7 +863,7 @@ export function PickMedSheet({ onClose }: { onClose: () => void }) {
           >
             <span className="block font-medium">{med.name}</span>
             <span className="text-sm text-muted">
-              {[med.who === "baby" ? babyName : "Alex", med.dose, frequencyLabel(med.frequency)].filter(Boolean).join(" · ")}
+              {[med.who === "baby" ? "Joni" : "Mom", med.dose, frequencyLabel(med.frequency)].filter(Boolean).join(" · ")}
             </span>
           </button>
         ))}

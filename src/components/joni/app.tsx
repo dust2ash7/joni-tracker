@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { isHot, scheduledMeds } from "@/lib/tracker/model";
-import { useTracker } from "@/lib/tracker/store";
+import { formatTimer, isHot, scheduledMeds } from "@/lib/tracker/model";
+import { childName, useTracker } from "@/lib/tracker/store";
 import { applyTheme } from "@/lib/tracker/theme";
 import { ComposerHost } from "@/components/joni/forms";
-import { DiapersScreen, Dock, FeedsScreen, LogScreen, MedsScreen, TodayScreen } from "@/components/joni/screens";
+import { DiapersScreen, Dock, FeedsScreen, MedsScreen, TodayScreen } from "@/components/joni/screens";
 import { OverviewScreen } from "@/components/joni/overview";
 import type { Composer, TabId } from "@/components/joni/types";
 
@@ -36,7 +36,7 @@ function useNow() {
 function BootScreen() {
   return (
     <div className="mx-auto flex min-h-screen max-w-lg flex-col bg-cream px-5 pt-safe text-ink">
-      <p className="font-serif text-4xl font-medium">Joni</p>
+      <p className="font-serif text-4xl font-medium">Nest</p>
       <p className="mt-2 text-sm text-muted">Opening today’s log…</p>
     </div>
   );
@@ -69,6 +69,69 @@ function ToastBar() {
   );
 }
 
+function ChildSwitch() {
+  const child = useTracker((state) => state.child);
+  const setChild = useTracker((state) => state.setChild);
+  return (
+    <div className="grid grid-cols-2 gap-1 rounded-full bg-sage-soft p-1" role="tablist" aria-label="Child">
+      {(["alex", "joni"] as const).map((id) => {
+        const on = child === id;
+        return (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            onClick={() => setChild(id)}
+            className={`min-h-12 rounded-full text-base font-medium ${on ? "bg-paper text-ink" : "text-muted"}`}
+          >
+            {childName(id)}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function TimerBanner({ go }: { go: (tab: TabId) => void }) {
+  const timer = useTracker((state) => state.timer);
+  const setChild = useTracker((state) => state.setChild);
+  const stopTimer = useTracker((state) => state.stopTimer);
+  const [tick, setTick] = useState(() => Date.now());
+  useEffect(() => {
+    if (!timer) return;
+    const id = window.setInterval(() => setTick(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [timer]);
+  if (!timer) return null;
+  const elapsed = Math.max(0, Math.floor((tick - timer.startedAt) / 1000));
+  return (
+    <div className="mt-2 flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => {
+          setChild(timer.child);
+          go("feeds");
+        }}
+        className="min-h-12 flex-1 rounded-2xl bg-sage px-4 text-left text-on-sage"
+      >
+        <span className="block text-sm">Timing {childName(timer.child)}</span>
+        <span className="font-serif text-2xl tabular-nums">{formatTimer(elapsed)}</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          stopTimer();
+          go("feeds");
+        }}
+        className="min-h-12 rounded-2xl bg-clay px-4 font-medium text-on-clay"
+      >
+        Stop
+      </button>
+    </div>
+  );
+}
+
 function Shell() {
   const [tab, setTab] = useState<TabId>("today");
   const [composer, setComposer] = useState<Composer | null>(null);
@@ -94,13 +157,16 @@ function Shell() {
   return (
     <div className="min-h-screen bg-frame text-ink">
       <div className="mx-auto min-h-screen max-w-lg bg-cream pb-dock">
+        <div className="sticky top-0 z-20 bg-cream/95 px-4 pt-safe pb-2 backdrop-blur">
+          <ChildSwitch />
+          <TimerBanner go={setTab} />
+        </div>
         <main className="px-4">
           {tab === "today" ? <TodayScreen now={now} open={setComposer} go={setTab} /> : null}
           {tab === "feeds" ? <FeedsScreen now={now} open={setComposer} /> : null}
           {tab === "diapers" ? <DiapersScreen now={now} open={setComposer} /> : null}
           {tab === "meds" ? <MedsScreen now={now} open={setComposer} /> : null}
           {tab === "overview" ? <OverviewScreen now={now} open={setComposer} /> : null}
-          {tab === "log" ? <LogScreen now={now} open={setComposer} /> : null}
         </main>
       </div>
       <Dock tab={tab} setTab={setTab} due={due} />

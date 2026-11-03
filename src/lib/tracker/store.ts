@@ -6,6 +6,7 @@ import {
   type DiaperInput,
   type Dose,
   type FeedInput,
+  type FeedType,
   type MedInput,
   type Settings,
   uid,
@@ -14,6 +15,30 @@ import {
   type Medication,
 } from "@/lib/tracker/model";
 
+export type ChildId = "alex" | "joni";
+
+export type FeedTimer = {
+  child: ChildId;
+  startedAt: number;
+  type: FeedType | null;
+};
+
+export type PendingFeed = {
+  child: ChildId;
+  at: number;
+  durationSec: number;
+  type: FeedType | null;
+};
+
+export type ChildLog = {
+  feeds: Feed[];
+  diapers: Diaper[];
+};
+
+export function childName(child: ChildId) {
+  return child === "alex" ? "Alex" : "Joni";
+}
+
 export type Toast = {
   id: string;
   message: string;
@@ -21,17 +46,25 @@ export type Toast = {
 };
 
 type Data = {
-  feeds: Feed[];
-  diapers: Diaper[];
+  child: ChildId;
+  logs: Record<ChildId, ChildLog>;
   meds: Medication[];
   doses: Dose[];
   notes: Record<string, DayNote>;
   settings: Settings;
   seeds: string[];
+  timer: FeedTimer | null;
+  pending: PendingFeed | null;
+  migrated: boolean;
 };
 
 type Store = Data & {
   toast: Toast | null;
+  setChild: (child: ChildId) => void;
+  startTimer: (type: FeedType | null) => void;
+  setTimerType: (type: FeedType | null) => void;
+  stopTimer: () => void;
+  clearPending: () => void;
   addFeed: (input: FeedInput) => void;
   updateFeed: (id: string, input: FeedInput) => void;
   deleteFeed: (id: string) => void;
@@ -190,134 +223,267 @@ function withDischargeSeed(data: Partial<Data>) {
   return { meds, doses, seeds };
 }
 
+function emptyLogs(): Record<ChildId, ChildLog> {
+  return {
+    alex: { feeds: [], diapers: [] },
+    joni: { feeds: [], diapers: [] },
+  };
+}
+
+function withLog(
+  state: { logs: Record<ChildId, ChildLog> },
+  child: ChildId,
+  log: ChildLog,
+) {
+  return { logs: { ...state.logs, [child]: log } };
+}
+
+function readJson(key: string) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function asList<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
+function mergeById<T extends { id: string }>(kept: T[], incoming: T[]) {
+  const seen = new Set(kept.map((item) => item.id));
+  return [...kept, ...incoming.filter((item) => item.id && !seen.has(item.id))];
+}
+
+function isChild(value: unknown): value is ChildId {
+  return value === "alex" || value === "joni";
+}
+
+type LegacyState = Partial<Data> & { feeds?: Feed[]; diapers?: Diaper[] };
+
+function assembleState(): Data {
+  const meta = (readJson("nest_meta") ?? {}) as {
+    child?: ChildId;
+    notes?: Record<string, DayNote>;
+    settings?: Partial<Settings>;
+    seeds?: string[];
+    timer?: FeedTimer | null;
+    pending?: PendingFeed | null;
+    migrated?: boolean;
+  };
+  const shared = (readJson("shared_meds") ?? {}) as { meds?: Medication[]; doses?: Dose[] };
+  const migrated = meta.migrated === true;
+  const legacyWrap = migrated ? null : (readJson("joni-tracker-v1") as { state?: LegacyState } | null);
+  const legacy = (legacyWrap?.state ?? {}) as LegacyState;
+  const logs = emptyLogs();
+  logs.alex = {
+    feeds: asList<Feed>(readJson("alex_feedings")),
+    diapers: asList<Diaper>(readJson("alex_diapers")),
+  };
+  logs.joni = {
+    feeds: mergeById(asList<Feed>(readJson("joni_feedings")), asList<Feed>(legacy.feeds)),
+    diapers: mergeById(asList<Diaper>(readJson("joni_diapers")), asList<Diaper>(legacy.diapers)),
+  };
+  const seededMeds = withDischargeSeed({
+    meds: mergeById(asList<Medication>(shared.meds), asList<Medication>(legacy.meds)),
+    doses: mergeById(asList<Dose>(shared.doses), asList<Dose>(legacy.doses)),
+    seeds: [...new Set([...(meta.seeds ?? []), ...(legacy.seeds ?? [])])],
+  });
+  return {
+    child: isChild(meta.child) ? meta.child : "joni",
+    logs,
+    meds: seededMeds.meds,
+    doses: seededMeds.doses,
+    notes: { ...(legacy.notes ?? {}), ...(meta.notes ?? {}) },
+    settings: { ...defaultSettings, ...(legacy.settings ?? {}), ...(meta.settings ?? {}) },
+    seeds: seededMeds.seeds,
+    timer: meta.timer?.startedAt ? meta.timer : null,
+    pending: meta.pending?.durationSec ? meta.pending : null,
+    migrated: true,
+  };
+}
+
+function writeState(state: Data) {
+  const logs = state.logs ?? emptyLogs();
+  localStorage.setItem("alex_feedings", JSON.stringify(logs.alex?.feeds ?? []));
+  localStorage.setItem("joni_feedings", JSON.stringify(logs.joni?.feeds ?? []));
+  localStorage.setItem("alex_diapers", JSON.stringify(logs.alex?.diapers ?? []));
+  localStorage.setItem("joni_diapers", JSON.stringify(logs.joni?.diapers ?? []));
+  localStorage.setItem("shared_meds", JSON.stringify({ meds: state.meds ?? [], doses: state.doses ?? [] }));
+  localStorage.setItem(
+    "nest_meta",
+    JSON.stringify({
+      child: state.child,
+      notes: state.notes ?? {},
+      settings: state.settings,
+      seeds: state.seeds ?? [],
+      timer: state.timer ?? null,
+      pending: state.pending ?? null,
+      migrated: true,
+    }),
+  );
+}
+
+const nestStorage = {
+  getItem: () => {
+    const state = assembleState();
+    const meta = readJson("nest_meta") as { migrated?: boolean } | null;
+    if (!meta?.migrated) writeState(state);
+    return JSON.stringify({ state, version: 1 });
+  },
+  setItem: (_name: string, value: string) => {
+    const parsed = JSON.parse(value) as { state?: Data };
+    writeState(parsed.state ?? (parsed as unknown as Data));
+  },
+  removeItem: () => {
+    for (const key of ["alex_feedings", "joni_feedings", "alex_diapers", "joni_diapers", "shared_meds", "nest_meta"]) {
+      localStorage.removeItem(key);
+    }
+  },
+};
+
 const seeded = withDischargeSeed({});
 
 let pendingUndo: (() => void) | null = null;
 
-function toastOf(message: string, undoable: boolean): Toast {
-  return { id: uid(), message, undoable };
-}
-
-function cleanNote(notes?: string) {
-  const text = notes?.trim();
-  return text ? text : undefined;
-}
-
-function cleanFeed(input: FeedInput): FeedInput {
-  const amount = input.amount && input.amount > 0 ? input.amount : undefined;
-  const durationMin =
-    input.durationMin && input.durationMin > 0 ? Math.round(input.durationMin) : undefined;
-  return {
-    type: input.type,
-    at: clampPast(input.at),
-    amount,
-    unit: amount ? input.unit : undefined,
-    durationMin,
-    notes: cleanNote(input.notes),
-  };
-}
-
-function cleanDiaper(input: DiaperInput): DiaperInput {
-  return {
-    kind: input.kind,
-    at: clampPast(input.at),
-    tags: [...new Set(input.tags)],
-    notes: cleanNote(input.notes),
-  };
-}
-
-function cleanMed(input: MedInput): MedInput | null {
-  const name = input.name.trim();
-  if (!name) return null;
-  const frequency =
-    input.frequency.kind === "asneeded"
-      ? { kind: "asneeded" as const }
-      : input.frequency.kind === "every"
-        ? { kind: "every" as const, hours: Math.min(24, Math.max(1, Math.round(input.frequency.hours))) }
-        : {
-            kind: "times" as const,
-            times: [...new Set(input.frequency.times.filter((time) => /^\d{2}:\d{2}$/.test(time)))].sort(),
-          };
-  if (frequency.kind === "times" && frequency.times.length === 0) return null;
-  return {
-    name,
-    dose: input.dose.trim(),
-    frequency,
-    notes: input.notes.trim(),
-    active: input.active,
-    who: input.who === "baby" ? "baby" : "mom",
-  };
-}
-
 export const useTracker = create<Store>()(
   persist(
     (set, get) => ({
-      feeds: [],
-      diapers: [],
+      child: "joni",
+      logs: emptyLogs(),
       meds: seeded.meds,
       doses: seeded.doses,
       notes: {},
       seeds: seeded.seeds,
       settings: defaultSettings,
+      timer: null,
+      pending: null,
+      migrated: true,
       toast: null,
+      setChild: (child) => set({ child }),
+      startTimer: (type) => {
+        const current = get().timer;
+        const child = get().child;
+        if (current && current.child !== child) return;
+        if (current) {
+          set({ timer: { ...current, type } });
+          return;
+        }
+        set({ timer: { child, startedAt: Date.now(), type }, pending: null });
+      },
+      setTimerType: (type) => {
+        const timer = get().timer;
+        if (!timer || timer.child !== get().child) return;
+        set({ timer: { ...timer, type } });
+      },
+      stopTimer: () => {
+        const timer = get().timer;
+        if (!timer) return;
+        const durationSec = Math.max(1, Math.round((Date.now() - timer.startedAt) / 1000));
+        set({
+          timer: null,
+          pending: { child: timer.child, at: timer.startedAt, durationSec, type: timer.type },
+          child: timer.child,
+        });
+      },
+      clearPending: () => set({ pending: null }),
       addFeed: (input) => {
+        const child = get().child;
         const feed: Feed = { id: uid(), ...cleanFeed(input) };
-        pendingUndo = () => set((state) => ({ feeds: state.feeds.filter((item) => item.id !== feed.id) }));
-        set((state) => ({ feeds: [feed, ...state.feeds], toast: toastOf("Feed logged", true) }));
+        pendingUndo = () =>
+          set((state) => withLog(state, child, { ...state.logs[child], feeds: state.logs[child].feeds.filter((item) => item.id !== feed.id) }));
+        set((state) => ({
+          ...withLog(state, child, { ...state.logs[child], feeds: [feed, ...state.logs[child].feeds] }),
+          pending: state.pending?.child === child ? null : state.pending,
+          toast: toastOf("Feed logged", true),
+        }));
       },
       updateFeed: (id, input) => {
-        const prev = get().feeds.find((item) => item.id === id);
+        const child = get().child;
+        const prev = get().logs[child].feeds.find((item) => item.id === id);
         if (!prev) return;
         const next = { ...prev, ...cleanFeed(input), id };
         pendingUndo = () =>
-          set((state) => ({ feeds: state.feeds.map((item) => (item.id === id ? prev : item)) }));
+          set((state) =>
+            withLog(state, child, {
+              ...state.logs[child],
+              feeds: state.logs[child].feeds.map((item) => (item.id === id ? prev : item)),
+            }),
+          );
         set((state) => ({
-          feeds: state.feeds.map((item) => (item.id === id ? next : item)),
+          ...withLog(state, child, {
+            ...state.logs[child],
+            feeds: state.logs[child].feeds.map((item) => (item.id === id ? next : item)),
+          }),
           toast: toastOf("Feed updated", true),
         }));
       },
       deleteFeed: (id) => {
-        const prev = get().feeds.find((item) => item.id === id);
+        const child = get().child;
+        const prev = get().logs[child].feeds.find((item) => item.id === id);
         if (!prev) return;
-        pendingUndo = () => set((state) => ({ feeds: [prev, ...state.feeds] }));
+        pendingUndo = () =>
+          set((state) => withLog(state, child, { ...state.logs[child], feeds: [prev, ...state.logs[child].feeds] }));
         set((state) => ({
-          feeds: state.feeds.filter((item) => item.id !== id),
+          ...withLog(state, child, { ...state.logs[child], feeds: state.logs[child].feeds.filter((item) => item.id !== id) }),
           toast: toastOf("Feed deleted", true),
         }));
       },
       addDiaper: (input) => {
+        const child = get().child;
         const diaper: Diaper = { id: uid(), ...cleanDiaper(input) };
         pendingUndo = () =>
-          set((state) => ({ diapers: state.diapers.filter((item) => item.id !== diaper.id) }));
+          set((state) =>
+            withLog(state, child, {
+              ...state.logs[child],
+              diapers: state.logs[child].diapers.filter((item) => item.id !== diaper.id),
+            }),
+          );
         set((state) => ({
-          diapers: [diaper, ...state.diapers],
+          ...withLog(state, child, { ...state.logs[child], diapers: [diaper, ...state.logs[child].diapers] }),
           toast: toastOf("Diaper logged", true),
         }));
       },
       updateDiaper: (id, input) => {
-        const prev = get().diapers.find((item) => item.id === id);
+        const child = get().child;
+        const prev = get().logs[child].diapers.find((item) => item.id === id);
         if (!prev) return;
         const next = { ...prev, ...cleanDiaper(input), id };
         pendingUndo = () =>
-          set((state) => ({ diapers: state.diapers.map((item) => (item.id === id ? prev : item)) }));
+          set((state) =>
+            withLog(state, child, {
+              ...state.logs[child],
+              diapers: state.logs[child].diapers.map((item) => (item.id === id ? prev : item)),
+            }),
+          );
         set((state) => ({
-          diapers: state.diapers.map((item) => (item.id === id ? next : item)),
+          ...withLog(state, child, {
+            ...state.logs[child],
+            diapers: state.logs[child].diapers.map((item) => (item.id === id ? next : item)),
+          }),
           toast: toastOf("Diaper updated", true),
         }));
       },
       deleteDiaper: (id) => {
-        const prev = get().diapers.find((item) => item.id === id);
+        const child = get().child;
+        const prev = get().logs[child].diapers.find((item) => item.id === id);
         if (!prev) return;
-        pendingUndo = () => set((state) => ({ diapers: [prev, ...state.diapers] }));
+        pendingUndo = () =>
+          set((state) => withLog(state, child, { ...state.logs[child], diapers: [prev, ...state.logs[child].diapers] }));
         set((state) => ({
-          diapers: state.diapers.filter((item) => item.id !== id),
+          ...withLog(state, child, {
+            ...state.logs[child],
+            diapers: state.logs[child].diapers.filter((item) => item.id !== id),
+          }),
           toast: toastOf("Diaper deleted", true),
         }));
       },
       addMed: (input) => {
         const cleaned = cleanMed(input);
         if (!cleaned) return;
-        const med: Medication = { id: uid(), ...cleaned };
+        const med: Medication = { id: uid(), ...cleaned, who: "mom" };
         pendingUndo = () => set((state) => ({ meds: state.meds.filter((item) => item.id !== med.id) }));
         set((state) => ({ meds: [med, ...state.meds], toast: toastOf("Medication saved", true) }));
       },
@@ -325,7 +491,7 @@ export const useTracker = create<Store>()(
         const prev = get().meds.find((item) => item.id === id);
         const cleaned = cleanMed(input);
         if (!prev || !cleaned) return;
-        const next = { ...prev, ...cleaned, id };
+        const next = { ...prev, ...cleaned, id, who: prev.who === "baby" ? ("baby" as const) : ("mom" as const) };
         pendingUndo = () =>
           set((state) => ({ meds: state.meds.map((item) => (item.id === id ? prev : item)) }));
         set((state) => ({
@@ -386,13 +552,7 @@ export const useTracker = create<Store>()(
         }));
       },
       setSettings: (patch) => {
-        set((state) => ({
-          settings: {
-            ...state.settings,
-            ...patch,
-            babyName: patch.babyName !== undefined ? patch.babyName : state.settings.babyName,
-          },
-        }));
+        set((state) => ({ settings: { ...state.settings, ...patch } }));
       },
       setDayNote: (dayKey, note) => {
         set((state) => {
@@ -404,19 +564,21 @@ export const useTracker = create<Store>()(
       },
       eraseAll: () => {
         const snap = {
-          feeds: get().feeds,
-          diapers: get().diapers,
+          logs: get().logs,
           meds: get().meds,
           doses: get().doses,
           notes: get().notes,
+          timer: get().timer,
+          pending: get().pending,
         };
         pendingUndo = () => set(snap);
         set({
-          feeds: [],
-          diapers: [],
+          logs: emptyLogs(),
           meds: [],
           doses: [],
           notes: {},
+          timer: null,
+          pending: null,
           toast: toastOf("All logs erased", true),
         });
       },
@@ -432,33 +594,111 @@ export const useTracker = create<Store>()(
       },
     }),
     {
-      name: "joni-tracker-v1",
-      storage: createJSONStorage(() => localStorage),
+      name: "nest",
+      storage: createJSONStorage(() => nestStorage),
       skipHydration: true,
       version: 1,
       partialize: (state) => ({
-        feeds: state.feeds,
-        diapers: state.diapers,
+        child: state.child,
+        logs: state.logs,
         meds: state.meds,
         doses: state.doses,
         notes: state.notes,
         settings: state.settings,
         seeds: state.seeds,
+        timer: state.timer,
+        pending: state.pending,
+        migrated: true,
       }),
       merge: (persisted, current) => {
         const data = (persisted ?? {}) as Partial<Data>;
         const next = withDischargeSeed(data);
+        const logs = data.logs ?? emptyLogs();
         return {
           ...current,
-          feeds: data.feeds ?? [],
-          diapers: data.diapers ?? [],
+          child: isChild(data.child) ? data.child : "joni",
+          logs: {
+            alex: { feeds: logs.alex?.feeds ?? [], diapers: logs.alex?.diapers ?? [] },
+            joni: { feeds: logs.joni?.feeds ?? [], diapers: logs.joni?.diapers ?? [] },
+          },
           meds: next.meds,
           doses: next.doses,
           notes: data.notes ?? {},
           seeds: next.seeds,
           settings: { ...defaultSettings, ...data.settings },
+          timer: data.timer ?? null,
+          pending: data.pending ?? null,
+          migrated: true,
         };
       },
     },
   ),
 );
+
+export function useActiveLogs() {
+  const child = useTracker((state) => state.child);
+  const logs = useTracker((state) => state.logs);
+  const log = logs[child] ?? { feeds: [], diapers: [] };
+  return { child, name: childName(child), feeds: log.feeds, diapers: log.diapers };
+}
+
+function toastOf(message: string, undoable: boolean): Toast {
+  return { id: uid(), message, undoable };
+}
+
+function cleanNote(notes?: string) {
+  const text = notes?.trim();
+  return text ? text : undefined;
+}
+
+function cleanFeed(input: FeedInput): FeedInput {
+  const amount = input.amount && input.amount > 0 ? input.amount : undefined;
+  const durationSec =
+    input.durationSec && input.durationSec > 0 ? Math.round(input.durationSec) : undefined;
+  const durationMin = durationSec
+    ? Math.max(1, Math.round(durationSec / 60))
+    : input.durationMin && input.durationMin > 0
+      ? Math.round(input.durationMin)
+      : undefined;
+  return {
+    type: input.type,
+    at: clampPast(input.at),
+    amount,
+    unit: amount ? input.unit : undefined,
+    durationMin,
+    durationSec,
+    notes: cleanNote(input.notes),
+  };
+}
+
+function cleanDiaper(input: DiaperInput): DiaperInput {
+  return {
+    kind: input.kind,
+    at: clampPast(input.at),
+    tags: [...new Set(input.tags)],
+    notes: cleanNote(input.notes),
+  };
+}
+
+function cleanMed(input: MedInput): MedInput | null {
+  const name = input.name.trim();
+  if (!name) return null;
+  const frequency =
+    input.frequency.kind === "asneeded"
+      ? { kind: "asneeded" as const }
+      : input.frequency.kind === "every"
+        ? { kind: "every" as const, hours: Math.min(24, Math.max(1, Math.round(input.frequency.hours))) }
+        : {
+            kind: "times" as const,
+            times: [...new Set(input.frequency.times.filter((time) => /^\d{2}:\d{2}$/.test(time)))].sort(),
+          };
+  if (frequency.kind === "times" && frequency.times.length === 0) return null;
+  return {
+    name,
+    dose: input.dose.trim(),
+    frequency,
+    notes: input.notes.trim(),
+    active: input.active,
+    who: input.who === "baby" ? "baby" : "mom",
+  };
+}

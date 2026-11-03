@@ -17,7 +17,7 @@ export function TopBar({
   onSettings: () => void;
 }) {
   return (
-    <header className="flex items-start justify-between gap-3 pt-safe pb-2">
+    <header className="flex items-start justify-between gap-3 pt-2 pb-2">
       <div className="min-w-0">
         <h1 className="font-serif text-4xl font-medium leading-tight break-words">{title}</h1>
         {sub ? <p className="mt-2 text-sm text-pretty text-muted">{sub}</p> : null}

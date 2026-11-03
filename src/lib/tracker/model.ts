@@ -10,6 +10,7 @@ export type Feed = {
   amount?: number;
   unit?: Unit;
   durationMin?: number;
+  durationSec?: number;
   notes?: string;
 };
 
@@ -277,16 +278,40 @@ export function formatTotal(amount: number, unit: Unit) {
   return formatAmount(amount, unit);
 }
 
+export function feedSeconds(feed: { durationMin?: number; durationSec?: number }) {
+  if (typeof feed.durationSec === "number" && feed.durationSec > 0) return Math.round(feed.durationSec);
+  if (feed.durationMin && feed.durationMin > 0) return Math.round(feed.durationMin * 60);
+  return 0;
+}
+
+export function formatDuration(feed: { durationMin?: number; durationSec?: number }) {
+  const sec = feedSeconds(feed);
+  if (!sec) return "";
+  const minutes = Math.floor(sec / 60);
+  const rest = sec % 60;
+  if (minutes <= 0) return `${rest}s`;
+  if (!rest) return `${minutes} min`;
+  return `${minutes}m ${rest}s`;
+}
+
+export function formatTimer(totalSeconds: number) {
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return `${minutes}:${String(rest).padStart(2, "0")}`;
+}
+
 export function feedMeta(feed: Feed) {
   const bits: string[] = [];
-  if (feed.durationMin) bits.push(`${feed.durationMin} min`);
+  const duration = formatDuration(feed);
+  if (duration) bits.push(duration);
   if (feed.amount && feed.unit) bits.push(formatAmount(feed.amount, feed.unit));
   return bits.join(" · ");
 }
 
 export function feedTotals(feeds: Feed[], unit: Unit) {
   let volume = 0;
-  let minutes = 0;
+  let seconds = 0;
   for (const feed of feeds) {
     if (
       feed.amount &&
@@ -295,17 +320,9 @@ export function feedTotals(feeds: Feed[], unit: Unit) {
     ) {
       volume += amountTo(feed.amount, feed.unit, unit);
     }
-    if (
-      feed.durationMin &&
-      (feed.type === "left" ||
-        feed.type === "right" ||
-        feed.type === "both" ||
-        feed.type === "pump")
-    ) {
-      minutes += feed.durationMin;
-    }
+    seconds += feedSeconds(feed);
   }
-  return { count: feeds.length, volume, minutes, unit };
+  return { count: feeds.length, volume, minutes: Math.round(seconds / 60), seconds, unit };
 }
 
 export function diaperTitle(kind: DiaperKind) {
@@ -590,7 +607,7 @@ export function reportRows(input: {
         at: dose.at,
         kind: "dose",
         typeLabel: "Med",
-        details: [personLabel(who, input.babyName), dose.name, dose.dose].filter(Boolean).join(" · "),
+        details: [who === "baby" ? input.babyName : "Mom", dose.name, dose.dose].filter(Boolean).join(" · "),
         notes: "",
         dose,
       });
@@ -712,7 +729,7 @@ export function reportText(input: {
     const notes = row.notes ? ` · ${row.notes}` : "";
     lines.push(`• ${formatStamp(row.at)}  ${row.typeLabel}  ${row.details}${notes}`);
   }
-  lines.push("", "From Joni Tracker");
+  lines.push("", "From Nest");
   return lines.join("\n");
 }
 
@@ -803,6 +820,6 @@ export function daySummary(input: {
     if (input.note.mood) lines.push(MOODS.find((mood) => mood.id === input.note?.mood)?.label ?? "");
     if (input.note.text.trim()) lines.push(input.note.text.trim());
   }
-  lines.push("", "From Joni Tracker");
+  lines.push("", "From Nest");
   return lines.filter((line, index, all) => line !== "" || all[index - 1] !== "").join("\n");
 }

@@ -2,12 +2,11 @@ import { useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
+  ChartColumn,
   Copy,
   Droplets,
   House,
   Milk,
-  NotebookPen,
-  ChartColumn,
   Pill,
 } from "lucide-react";
 import {
@@ -28,6 +27,7 @@ import {
   feedTotals,
   formatAgo,
   formatDay,
+  formatDuration,
   formatLongDay,
   formatTime,
   formatTotal,
@@ -49,7 +49,7 @@ import {
   type Feed,
   type Medication,
 } from "@/lib/tracker/model";
-import { useTracker } from "@/lib/tracker/store";
+import { useActiveLogs, useTracker } from "@/lib/tracker/store";
 import type { Composer, TabId } from "@/components/joni/types";
 import { DiaperForm, FeedForm } from "@/components/joni/forms";
 import { EmptyState, EventButton, PrimaryButton, Stat, TopBar, choiceClass } from "@/components/joni/ui";
@@ -129,9 +129,7 @@ export function TodayScreen({
   open: (composer: Composer) => void;
   go: (tab: TabId) => void;
 }) {
-  const babyName = useTracker((state) => state.settings.babyName.trim() || "Joni");
-  const feeds = useTracker((state) => state.feeds);
-  const diapers = useTracker((state) => state.diapers);
+  const { child, name, feeds, diapers } = useActiveLogs();
   const meds = useTracker((state) => state.meds);
   const doses = useTracker((state) => state.doses);
   const lastFeed = latest(feeds);
@@ -139,7 +137,7 @@ export function TodayScreen({
   const ranked = scheduledMeds(meds, doses, now);
   const upcoming = ranked.find((item) => medWho(item.med) === "mom");
   const babyNext = ranked.find((item) => medWho(item.med) === "baby");
-  const events = buildTimeline(feeds, diapers, doses, startOfDay(now), endOfDay(now), babyName);
+  const events = buildTimeline(feeds, diapers, doses, startOfDay(now), endOfDay(now), name);
 
   function quickMed() {
     const active = useTracker.getState().meds.filter((med) => med.active);
@@ -151,7 +149,7 @@ export function TodayScreen({
   return (
     <div>
       <TopBar
-        title={babyName}
+        title={name}
         sub={`${greeting(now)} · ${formatLongDay(now)}`}
         onSettings={() => open({ kind: "settings" })}
       />
@@ -168,7 +166,7 @@ export function TodayScreen({
             <>
               <p className="mt-2 font-serif text-2xl font-medium tabular-nums">{formatAgo(lastFeed.at, now)}</p>
               <p className="mt-1 text-sm text-pretty text-muted">
-                {feedTitle(lastFeed.type)} · {formatTime(lastFeed.at)}
+                {[feedTitle(lastFeed.type), formatDuration(lastFeed), formatTime(lastFeed.at)].filter(Boolean).join(" · ")}
               </p>
             </>
           ) : (
@@ -247,9 +245,9 @@ export function TodayScreen({
         )}
       </article>
 
-      {babyNext ? (
+      {child === "joni" && babyNext ? (
         <DueCard
-          label={`For ${babyName}`}
+          label="For Joni"
           item={babyNext}
           doses={doses}
           now={now}
@@ -294,7 +292,7 @@ function openEvent(
 }
 
 export function FeedsScreen({ now, open }: { now: number; open: (composer: Composer) => void }) {
-  const feeds = useTracker((state) => state.feeds);
+  const { name, feeds } = useActiveLogs();
   const unit = useTracker((state) => state.settings.unit);
   const today = onDay(feeds, now);
   const totals = feedTotals(today, unit);
@@ -305,13 +303,13 @@ export function FeedsScreen({ now, open }: { now: number; open: (composer: Compo
     <div>
       <TopBar
         title="Feedings"
-        sub={last ? `Last feed ${formatAgo(last.at, now)}` : "Nothing logged yet"}
+        sub={last ? `${name} · last feed ${formatAgo(last.at, now)}` : `${name} · nothing logged yet`}
         onSettings={() => open({ kind: "settings" })}
       />
       <div className="mt-4 grid grid-cols-3 gap-2">
         <Stat label="Today" value={String(totals.count)} />
         <Stat label="Volume" value={formatTotal(totals.volume, unit)} />
-        <Stat label="Minutes" value={totals.minutes ? String(totals.minutes) : "—"} />
+        <Stat label="Time" value={totals.minutes ? `${totals.minutes}m` : "—"} />
       </div>
       <div className="mt-4">
         <FeedForm heading="Log a feed" />
@@ -346,7 +344,7 @@ export function FeedsScreen({ now, open }: { now: number; open: (composer: Compo
 }
 
 export function DiapersScreen({ now, open }: { now: number; open: (composer: Composer) => void }) {
-  const diapers = useTracker((state) => state.diapers);
+  const { name, diapers } = useActiveLogs();
   const today = onDay(diapers, now);
   const counts = diaperCounts(today);
   const { groups, truncated } = groupByDay(diapers, now);
@@ -355,7 +353,7 @@ export function DiapersScreen({ now, open }: { now: number; open: (composer: Com
     <div>
       <TopBar
         title="Diapers"
-        sub="Mixed diapers count as both wet and dirty."
+        sub={`${name} · wet, dirty, or both.`}
         onSettings={() => open({ kind: "settings" })}
       />
       <div className="mt-4 grid grid-cols-3 gap-2">
@@ -397,21 +395,20 @@ export function DiapersScreen({ now, open }: { now: number; open: (composer: Com
 }
 
 export function MedsScreen({ now, open }: { now: number; open: (composer: Composer) => void }) {
-  const babyName = useTracker((state) => state.settings.babyName.trim() || "Joni");
   const meds = useTracker((state) => state.meds);
   const doses = useTracker((state) => state.doses);
   const active = scheduledMeds(meds, doses, now);
   const paused = meds.filter((med) => !med.active);
   const groups = [
-    { label: "Alex", items: active.filter((item) => medWho(item.med) === "mom") },
-    { label: babyName, items: active.filter((item) => medWho(item.med) === "baby") },
+    { label: "Mom", items: active.filter((item) => medWho(item.med) !== "baby") },
+    { label: "Joni", items: active.filter((item) => medWho(item.med) === "baby") },
   ];
 
   return (
     <div>
       <TopBar
         title="Meds"
-        sub="Alex’s list and Joni’s drops stay separate. Red is due. Gold is within two hours."
+        sub="Shared by both babies. Red is due. Gold is within two hours."
         onSettings={() => open({ kind: "settings" })}
       />
       <div className="mt-4">
@@ -488,7 +485,7 @@ export function MedsScreen({ now, open }: { now: number; open: (composer: Compos
                 <span>
                   <span className="block font-medium">{med.name}</span>
                   <span className="text-sm text-muted">
-                    {[medWho(med) === "baby" ? babyName : "Alex", med.dose || "No dose written"].join(" · ")}
+                    {[medWho(med) === "baby" ? "Joni" : "Mom", med.dose || "No dose written"].join(" · ")}
                   </span>
                 </span>
                 <span className="text-sm text-muted">Paused</span>
@@ -506,8 +503,7 @@ export function LogScreen({ now, open }: { now: number; open: (composer: Compose
   const [filter, setFilter] = useState<"all" | "feed" | "diaper" | "dose">("all");
   const [copied, setCopied] = useState(false);
   const [copyText, setCopyText] = useState("");
-  const feeds = useTracker((state) => state.feeds);
-  const diapers = useTracker((state) => state.diapers);
+  const { name, feeds, diapers } = useActiveLogs();
   const doses = useTracker((state) => state.doses);
   const notes = useTracker((state) => state.notes);
   const settings = useTracker((state) => state.settings);
@@ -517,7 +513,7 @@ export function LogScreen({ now, open }: { now: number; open: (composer: Compose
   const dayFeeds = onDay(feeds, day);
   const dayDiapers = onDay(diapers, day);
   const dayDoses = onDay(doses, day);
-  const events = buildTimeline(feeds, diapers, doses, startOfDay(day), endOfDay(day), settings.babyName.trim() || "Joni").filter((event) =>
+  const events = buildTimeline(feeds, diapers, doses, startOfDay(day), endOfDay(day), name).filter((event) =>
     filter === "all" ? true : event.kind === filter,
   );
   const counts = diaperCounts(dayDiapers);
@@ -528,7 +524,7 @@ export function LogScreen({ now, open }: { now: number; open: (composer: Compose
 
   async function copyDay() {
     const text = daySummary({
-      babyName: settings.babyName.trim() || "Joni",
+      babyName: name,
       day,
       feeds: dayFeeds,
       diapers: dayDiapers,
@@ -694,7 +690,6 @@ const TABS: { id: TabId; label: string; icon: typeof House }[] = [
   { id: "diapers", label: "Diapers", icon: Droplets },
   { id: "meds", label: "Meds", icon: Pill },
   { id: "overview", label: "Overview", icon: ChartColumn },
-  { id: "log", label: "Log", icon: NotebookPen },
 ];
 
 export function Dock({
@@ -711,7 +706,7 @@ export function Dock({
       aria-label="Sections"
       className="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-lg border-t border-line bg-paper pb-safe"
     >
-      <div className="grid grid-cols-6 px-0.5 py-1">
+      <div className="grid grid-cols-5 px-1 py-1">
         {TABS.map((item) => {
           const active = tab === item.id;
           const Icon = item.icon;
@@ -722,7 +717,7 @@ export function Dock({
               aria-current={active ? "page" : undefined}
               aria-label={item.id === "meds" && due ? "Meds, something is due" : item.label}
               onClick={() => setTab(item.id)}
-              className={`relative flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-2xl px-0.5 text-[10px] font-medium leading-tight ${
+              className={`relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl text-xs font-medium ${
                 active ? "bg-sage-soft text-sage" : "text-muted"
               }`}
             >
