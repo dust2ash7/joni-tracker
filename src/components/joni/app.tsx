@@ -4,6 +4,7 @@ import { useTracker } from "@/lib/tracker/store";
 import { applyTheme } from "@/lib/tracker/theme";
 import { ComposerHost } from "@/components/joni/forms";
 import { DiapersScreen, Dock, FeedsScreen, LogScreen, MedsScreen, TodayScreen } from "@/components/joni/screens";
+import { OverviewScreen } from "@/components/joni/overview";
 import type { Composer, TabId } from "@/components/joni/types";
 
 function useHydrated() {
@@ -98,6 +99,7 @@ function Shell() {
           {tab === "feeds" ? <FeedsScreen now={now} open={setComposer} /> : null}
           {tab === "diapers" ? <DiapersScreen now={now} open={setComposer} /> : null}
           {tab === "meds" ? <MedsScreen now={now} open={setComposer} /> : null}
+          {tab === "overview" ? <OverviewScreen now={now} open={setComposer} /> : null}
           {tab === "log" ? <LogScreen now={now} open={setComposer} /> : null}
         </main>
       </div>

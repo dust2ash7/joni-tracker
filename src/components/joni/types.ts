@@ -1,6 +1,6 @@
 import type { Diaper, Dose, Feed, Medication } from "@/lib/tracker/model";
 
-export type TabId = "today" | "feeds" | "diapers" | "meds" | "log";
+export type TabId = "today" | "feeds" | "diapers" | "meds" | "overview" | "log";
 
 export type Composer =
   | { kind: "feed"; feed?: Feed }

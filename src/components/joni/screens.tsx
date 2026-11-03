@@ -7,6 +7,7 @@ import {
   House,
   Milk,
   NotebookPen,
+  ChartColumn,
   Pill,
 } from "lucide-react";
 import {
@@ -17,7 +18,10 @@ import {
   diaperCounts,
   diaperMeta,
   diaperTitle,
+  dueCardClass,
   dueLabel,
+  dueLabelClass,
+  dueNameClass,
   endOfDay,
   feedMeta,
   feedTitle,
@@ -85,24 +89,23 @@ function DueCard({
   open: (composer: Composer) => void;
 }) {
   const last = lastDose(item.med.id, doses);
-  const hot = isHot(item.due.status);
   return (
-    <article className={`mt-3 rounded-3xl bg-paper p-4 ring-1 ${hot ? "ring-clay" : "ring-line"}`}>
+    <article className={`mt-3 rounded-3xl p-4 ${dueCardClass(item.due)}`}>
       <p className="text-sm text-muted">{label}</p>
       <div className="mt-2 flex items-end justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate font-serif text-2xl font-medium">{item.med.name}</p>
+          <p className={`truncate font-serif text-2xl ${dueNameClass(item.due)}`}>{item.med.name}</p>
           <p className="mt-1 text-sm text-muted">
             {[item.med.dose, frequencyLabel(item.med.frequency)].filter(Boolean).join(" · ")}
           </p>
         </div>
-        <p className={`shrink-0 text-right text-sm font-medium tabular-nums ${hot ? "text-clay" : "text-sage"}`}>
+        <p className={`shrink-0 text-right text-sm tabular-nums ${dueLabelClass(item.due)}`}>
           {dueLabel(item.due, now)}
         </p>
       </div>
       <p className="mt-2 text-sm text-muted">{last ? `Last given ${formatTime(last.at)}` : "Not given yet"}</p>
       <div className="mt-3 grid gap-2">
-        <PrimaryButton tone={hot ? "clay" : "sage"} onClick={() => useTracker.getState().markDose(item.med.id)}>
+        <PrimaryButton tone={isHot(item.due.status) ? "clay" : "sage"} onClick={() => useTracker.getState().markDose(item.med.id)}>
           Mark given
         </PrimaryButton>
         <button
@@ -194,21 +197,19 @@ export function TodayScreen({
       </div>
 
       <article
-        className={`mt-3 rounded-3xl bg-paper p-4 ring-1 ${upcoming && isHot(upcoming.due.status) ? "ring-clay" : "ring-line"}`}
+        className={`mt-3 rounded-3xl p-4 ${upcoming ? dueCardClass(upcoming.due) : "bg-paper ring-1 ring-line"}`}
       >
         <p className="text-sm text-muted">Next mom med</p>
         {upcoming ? (
           <>
             <div className="mt-2 flex items-end justify-between gap-3">
               <div className="min-w-0">
-                <p className="truncate font-serif text-2xl font-medium">{upcoming.med.name}</p>
+                <p className={`truncate font-serif text-2xl ${dueNameClass(upcoming.due)}`}>{upcoming.med.name}</p>
                 <p className="mt-1 text-sm text-muted">
                   {[upcoming.med.dose, frequencyLabel(upcoming.med.frequency)].filter(Boolean).join(" · ")}
                 </p>
               </div>
-              <p
-                className={`shrink-0 text-right text-sm font-medium tabular-nums ${isHot(upcoming.due.status) ? "text-clay" : "text-sage"}`}
-              >
+              <p className={`shrink-0 text-right text-sm tabular-nums ${dueLabelClass(upcoming.due)}`}>
                 {dueLabel(upcoming.due, now)}
               </p>
             </div>
@@ -410,7 +411,7 @@ export function MedsScreen({ now, open }: { now: number; open: (composer: Compos
     <div>
       <TopBar
         title="Meds"
-        sub="Alex’s list and Joni’s drops stay separate. Reminders only."
+        sub="Alex’s list and Joni’s drops stay separate. Red is due. Gold is within two hours."
         onSettings={() => open({ kind: "settings" })}
       />
       <div className="mt-4">
@@ -431,14 +432,14 @@ export function MedsScreen({ now, open }: { now: number; open: (composer: Compos
             <div className="mt-3 grid gap-3">
               {group.items.map(({ med, due }) => {
                 const last = lastDose(med.id, doses);
-                const hot = isHot(due.status);
                 const baby = medWho(med) === "baby";
+                const hot = isHot(due.status);
                 return (
-                  <article key={med.id} className={`rounded-3xl bg-paper p-4 ring-1 ${hot ? "ring-clay" : "ring-line"}`}>
+                  <article key={med.id} className={`rounded-3xl p-4 ${dueCardClass(due)}`}>
                     <button type="button" onClick={() => open({ kind: "med", med })} className="w-full text-left">
                       <div className="flex items-start justify-between gap-3">
-                        <h3 className="font-serif text-2xl font-medium">{med.name}</h3>
-                        <span className={`shrink-0 text-sm font-medium tabular-nums ${hot ? "text-clay" : "text-sage"}`}>
+                        <h3 className={`font-serif text-2xl ${dueNameClass(due)}`}>{med.name}</h3>
+                        <span className={`shrink-0 text-sm tabular-nums ${dueLabelClass(due)}`}>
                           {dueLabel(due, now)}
                         </span>
                       </div>
@@ -692,6 +693,7 @@ const TABS: { id: TabId; label: string; icon: typeof House }[] = [
   { id: "feeds", label: "Feeds", icon: Milk },
   { id: "diapers", label: "Diapers", icon: Droplets },
   { id: "meds", label: "Meds", icon: Pill },
+  { id: "overview", label: "Overview", icon: ChartColumn },
   { id: "log", label: "Log", icon: NotebookPen },
 ];
 
@@ -709,7 +711,7 @@ export function Dock({
       aria-label="Sections"
       className="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-lg border-t border-line bg-paper pb-safe"
     >
-      <div className="grid grid-cols-5 px-1 py-1">
+      <div className="grid grid-cols-6 px-0.5 py-1">
         {TABS.map((item) => {
           const active = tab === item.id;
           const Icon = item.icon;
@@ -720,14 +722,14 @@ export function Dock({
               aria-current={active ? "page" : undefined}
               aria-label={item.id === "meds" && due ? "Meds, something is due" : item.label}
               onClick={() => setTab(item.id)}
-              className={`relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl text-xs font-medium ${
+              className={`relative flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-2xl px-0.5 text-[10px] font-medium leading-tight ${
                 active ? "bg-sage-soft text-sage" : "text-muted"
               }`}
             >
               <Icon className="size-5" strokeWidth={1.75} />
               {item.label}
               {item.id === "meds" && due ? (
-                <span className="absolute top-1.5 right-3 size-2 rounded-full bg-clay" />
+                <span className="absolute top-1 right-1 size-2 rounded-full bg-alert" />
               ) : null}
             </button>
           );
