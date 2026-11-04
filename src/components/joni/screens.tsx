@@ -718,7 +718,7 @@ export function Dock({
   return (
     <nav
       aria-label="Sections"
-      className="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-lg border-t border-line bg-paper pb-safe"
+      className="nest-dock border-t border-line bg-paper"
     >
       <div className="grid grid-cols-5 px-1 py-1">
         {TABS.map((item) => {

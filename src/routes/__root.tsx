@@ -9,11 +9,13 @@ const asset = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//
 
 const THEME_BOOT = `(function(){try{var theme="system";var raw=localStorage.getItem("nest_meta")||localStorage.getItem("joni-tracker-v1");if(raw){var parsed=JSON.parse(raw);var saved=(parsed&&parsed.settings&&parsed.settings.theme)||(parsed&&parsed.state&&parsed.state.settings&&parsed.state.settings.theme);if(saved==="light"||saved==="dark"||saved==="system")theme=saved;}var systemDark=window.matchMedia("(prefers-color-scheme: dark)").matches;var dark=theme==="dark"||(theme==="system"&&systemDark);var root=document.documentElement;root.classList.toggle("dark",theme==="dark");root.classList.toggle("light",theme==="light");root.style.colorScheme=dark?"dark":"light";var meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.setAttribute("content",dark?"#121815":"#F4EFE6");}catch(e){}})();`;
 
+const VIEWPORT_PIN = `(function(){function pin(){try{var vv=window.visualViewport;var root=document.documentElement;if(!vv){root.style.setProperty("--vv-top","0px");root.style.setProperty("--vv-bottom","0px");root.style.removeProperty("--vv-height");return;}var top=Math.max(0,vv.offsetTop||0);var bottom=Math.max(0,window.innerHeight-top-vv.height);root.style.setProperty("--vv-top",top+"px");root.style.setProperty("--vv-bottom",bottom+"px");root.style.setProperty("--vv-height",vv.height+"px");}catch(e){}}pin();if(window.visualViewport){window.visualViewport.addEventListener("resize",pin);window.visualViewport.addEventListener("scroll",pin);}window.addEventListener("resize",pin);window.addEventListener("orientationchange",pin);window.addEventListener("pageshow",pin);})();`;
+
 export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
+      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" },
       { title: APP_NAME },
       {
         name: "description",
@@ -43,6 +45,7 @@ export const Route = createRootRoute({
       <head>
         <HeadContent />
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+        <script dangerouslySetInnerHTML={{ __html: VIEWPORT_PIN }} />
       </head>
       <body>
         <PreviewHostBridge />

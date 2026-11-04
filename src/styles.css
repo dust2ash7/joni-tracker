@@ -110,12 +110,20 @@
 
 @layer base {
   html {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
   body {
     margin: 0;
-    min-height: 100%;
+    height: 100%;
+    min-height: 100vh;
+    min-height: 100svh;
+    min-height: 100dvh;
+    overflow: hidden;
+    overscroll-behavior: none;
     background: var(--c-frame);
     color: var(--c-ink);
     font-family: var(--font-sans);
@@ -171,7 +179,40 @@
 }
 
 @utility bottom-dock {
-  bottom: calc(5.25rem + env(safe-area-inset-bottom));
+  bottom: calc(5.25rem + env(safe-area-inset-bottom) + var(--vv-bottom, 0px));
+}
+
+.nest-shell {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: var(--vv-top, 0px);
+  width: 100%;
+  height: 100vh;
+  height: 100svh;
+  height: 100dvh;
+  height: var(--vv-height, 100dvh);
+  overflow: hidden;
+}
+
+.nest-scroll {
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.nest-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--vv-bottom, 0px);
+  z-index: 30;
+  width: 100%;
+  max-width: 32rem;
+  margin-inline: auto;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 @utility sheet-panel {

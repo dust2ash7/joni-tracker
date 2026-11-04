@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatTimer, isHot, scheduledMeds } from "@/lib/tracker/model";
 import { childName, useTracker } from "@/lib/tracker/store";
 import { applyTheme } from "@/lib/tracker/theme";
@@ -35,7 +35,7 @@ function useNow() {
 
 function BootScreen() {
   return (
-    <div className="mx-auto flex min-h-screen max-w-lg flex-col bg-cream px-5 pt-safe text-ink">
+    <div className="nest-shell mx-auto flex max-w-lg flex-col bg-cream px-5 pt-safe text-ink">
       <p className="font-serif text-4xl font-medium">Nest</p>
       <p className="mt-2 text-sm text-muted">Opening today’s log…</p>
     </div>
@@ -150,13 +150,15 @@ function Shell() {
     return () => media.removeEventListener("change", onChange);
   }, [theme]);
 
+  const scroller = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    window.scrollTo(0, 0);
+    scroller.current?.scrollTo(0, 0);
   }, [tab]);
 
   return (
-    <div className="min-h-screen bg-frame text-ink">
-      <div className="mx-auto min-h-screen max-w-lg bg-cream pb-dock">
+    <div className="nest-shell bg-frame text-ink">
+      <div ref={scroller} className="nest-scroll mx-auto max-w-lg bg-cream pb-dock">
         <div className="sticky top-0 z-20 bg-cream/95 px-4 pt-safe pb-2 backdrop-blur">
           <ChildSwitch />
           <TimerBanner go={setTab} />
