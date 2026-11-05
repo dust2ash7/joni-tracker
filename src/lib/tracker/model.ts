@@ -239,7 +239,17 @@ export function toDateTimeLocal(ts: number) {
 }
 
 export function fromDateTimeLocal(value: string) {
-  const t = new Date(value).getTime();
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value);
+  if (!match) return Date.now();
+  const t = new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+    Number(match[4]),
+    Number(match[5]),
+    0,
+    0,
+  ).getTime();
   return Number.isNaN(t) ? Date.now() : t;
 }
 
@@ -465,7 +475,7 @@ export function nextDue(med: Medication, doses: Dose[], now: number): DueInfo {
     return { dueAt: Number.MAX_SAFE_INTEGER, status: "later", never: !last, prn: true };
   }
   if (med.frequency.kind === "every") {
-    const hours = Math.min(24, Math.max(1, med.frequency.hours));
+    const hours = Math.min(24, Math.max(1, Number(med.frequency.hours) || 1));
     if (!last) return { dueAt: now, status: "due", never: true };
     const dueAt = last.at + hours * 3_600_000;
     return { dueAt, status: statusFor(dueAt, now), never: false };
@@ -500,9 +510,10 @@ export function dueLabel(due: DueInfo, now: number) {
   };
   if (due.status === "overdue") {
     const body = pretty("");
-    return body.includes("overdue") ? body : `${body} overdue`;
+    const text = body.includes("overdue") ? body : `${body} overdue`;
+    return `${text} · ${formatTime(due.dueAt)}`;
   }
-  return `in ${pretty("")}`;
+  return `in ${pretty("")} · ${formatTime(due.dueAt)}`;
 }
 
 export function scheduledMeds(meds: Medication[], doses: Dose[], now: number) {

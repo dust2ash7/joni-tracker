@@ -75,6 +75,7 @@ type Store = Data & {
   updateMed: (id: string, input: MedInput) => void;
   deleteMed: (id: string) => void;
   markDose: (medId: string, at?: number) => void;
+  setLastTaken: (medId: string, at: number) => void;
   updateDose: (id: string, at: number) => void;
   deleteDose: (id: string) => void;
   setSettings: (patch: Partial<Settings>) => void;
@@ -531,10 +532,42 @@ export const useTracker = create<Store>()(
         pendingUndo = () => set((state) => ({ doses: state.doses.filter((item) => item.id !== dose.id) }));
         set((state) => ({ doses: [dose, ...state.doses], toast: toastOf(`${med.name} marked taken`, true) }));
       },
+      setLastTaken: (medId, at) => {
+        const med = get().meds.find((item) => item.id === medId);
+        if (!med || !Number.isFinite(at)) return;
+        const latest = get()
+          .doses.filter((dose) => dose.medId === medId)
+          .sort((a, b) => b.at - a.at)[0];
+        if (latest && at <= latest.at) {
+          if (at === latest.at) {
+            pendingUndo = null;
+            set({ toast: toastOf("Already set to that time", false) });
+            return;
+          }
+          const next = { ...latest, at };
+          pendingUndo = () =>
+            set((state) => ({ doses: state.doses.map((item) => (item.id === latest.id ? latest : item)) }));
+          set((state) => ({
+            doses: state.doses.map((item) => (item.id === latest.id ? next : item)),
+            toast: toastOf(`${med.name} time updated`, true),
+          }));
+          return;
+        }
+        const dose: Dose = {
+          id: uid(),
+          medId: med.id,
+          name: med.name,
+          dose: med.dose,
+          at,
+          who: med.who === "baby" ? "baby" : "mom",
+        };
+        pendingUndo = () => set((state) => ({ doses: state.doses.filter((item) => item.id !== dose.id) }));
+        set((state) => ({ doses: [dose, ...state.doses], toast: toastOf(`${med.name} time updated`, true) }));
+      },
       updateDose: (id, at) => {
         const prev = get().doses.find((item) => item.id === id);
-        if (!prev) return;
-        const next = { ...prev, at: clampPast(at) };
+        if (!prev || !Number.isFinite(at)) return;
+        const next = { ...prev, at };
         pendingUndo = () =>
           set((state) => ({ doses: state.doses.map((item) => (item.id === id ? prev : item)) }));
         set((state) => ({

@@ -864,7 +864,7 @@ export function DoseSheet({ dose, onClose }: { dose: Dose; onClose: () => void }
 
 export function DoseTimeSheet({ medId, onClose }: { medId: string; onClose: () => void }) {
   const med = useTracker((state) => state.meds.find((item) => item.id === medId));
-  const markDose = useTracker((state) => state.markDose);
+  const setLastTaken = useTracker((state) => state.setLastTaken);
   const [at, setAt] = useState(Date.now());
   if (!med) return null;
   return (
@@ -874,7 +874,7 @@ export function DoseTimeSheet({ medId, onClose }: { medId: string; onClose: () =
         <TimeField value={at} onChange={setAt} />
         <PrimaryButton
           onClick={() => {
-            markDose(med.id, at);
+            setLastTaken(med.id, at);
             onClose();
           }}
         >
