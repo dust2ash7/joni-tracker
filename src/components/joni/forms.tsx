@@ -886,7 +886,8 @@ export function DoseTimeSheet({ medId, onClose }: { medId: string; onClose: () =
 }
 
 export function PickMedSheet({ onClose }: { onClose: () => void }) {
-  const meds = useTracker((state) => state.meds.filter((med) => med.active));
+  const allMeds = useTracker((state) => state.meds);
+  const meds = allMeds.filter((med) => med.active);
   const markDose = useTracker((state) => state.markDose);
   return (
     <Sheet title="Which med?" onClose={onClose}>
