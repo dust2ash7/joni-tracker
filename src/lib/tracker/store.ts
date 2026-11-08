@@ -275,8 +275,7 @@ function assembleState(): Data {
     migrated?: boolean;
   };
   const shared = (readJson("shared_meds") ?? {}) as { meds?: Medication[]; doses?: Dose[] };
-  const migrated = meta.migrated === true;
-  const legacyWrap = migrated ? null : (readJson("joni-tracker-v1") as { state?: LegacyState } | null);
+  const legacyWrap = readJson("joni-tracker-v1") as { state?: LegacyState } | null;
   const legacy = (legacyWrap?.state ?? {}) as LegacyState;
   const logs = emptyLogs();
   logs.alex = {
@@ -331,7 +330,7 @@ const nestStorage = {
   getItem: () => {
     const state = assembleState();
     const meta = readJson("nest_meta") as { migrated?: boolean } | null;
-    if (!meta?.migrated) writeState(state);
+    if (!meta?.migrated || readJson("joni-tracker-v1")) writeState(state);
     return JSON.stringify({ state, version: 1 });
   },
   setItem: (_name: string, value: string) => {
