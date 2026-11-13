@@ -110,21 +110,25 @@ export function FeedForm({
     setMore(true);
   }, [pending, child, initial]);
 
-  function save() {
+  function save(overrides?: { at?: number; type?: FeedType; durationSec?: number; durationMin?: number }) {
     const now = Date.now();
-    if (now - lock.current < 600) return;
-    if (!type) {
+    if (now - lock.current < 600) return false;
+    const nextType = overrides?.type ?? type;
+    if (!nextType) {
       setNeedType(true);
-      return;
+      return false;
     }
     lock.current = now;
+    const nextAt = overrides?.at ?? at;
+    const nextDurationSec = overrides?.durationSec ?? durationSec;
+    const nextDurationMin = overrides?.durationMin ?? parseAmount(duration);
     const input = {
-      at,
-      type,
+      at: nextAt,
+      type: nextType,
       unit,
       amount: parseAmount(amount),
-      durationMin: parseAmount(duration),
-      durationSec,
+      durationMin: nextDurationMin,
+      durationSec: nextDurationSec,
       notes,
     };
     if (initial) updateFeed(initial.id, input);
@@ -132,7 +136,7 @@ export function FeedForm({
       addFeed(input);
       clearPending();
       setAt(Date.now());
-      setType(isBreast(type) ? suggestNextBreast(type) : type);
+      setType(isBreast(nextType) ? suggestNextBreast(nextType) : nextType);
       setAmount("");
       setDuration("");
       setDurationSec(undefined);
@@ -141,6 +145,7 @@ export function FeedForm({
     }
     setNeedType(false);
     onDone?.();
+    return true;
   }
 
   return (
@@ -219,11 +224,19 @@ export function FeedForm({
             type="button"
             onClick={() => {
               if (running) {
-                const sec = Math.max(1, Math.round((Date.now() - (timer?.startedAt ?? Date.now())) / 1000));
-                setDurationSec(sec);
-                setDuration(String(Math.max(1, Math.round(sec / 60))));
-                if (timer?.type) setType(timer.type);
+                const startedAt = timer?.startedAt ?? Date.now();
+                const sec = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+                const minutes = Math.max(1, Math.round(sec / 60));
                 stopTimer();
+                if (!type) {
+                  setAt(startedAt);
+                  setDurationSec(sec);
+                  setDuration(String(minutes));
+                  setMore(true);
+                  setNeedType(true);
+                  return;
+                }
+                save({ at: startedAt, type, durationSec: sec, durationMin: minutes });
                 return;
               }
               startTimer(type);

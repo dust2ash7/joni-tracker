@@ -11,12 +11,16 @@ import {
   formatAmount,
   formatDay,
   formatTime,
+  formatTotal,
   formatWeekday,
+  nextDue,
   onDay,
   rangeDays,
   reportCsv,
   reportRows,
   reportText,
+  rollingWindow,
+  type AdherenceRow,
   type ReportFilter,
 } from "@/lib/tracker/model";
 import { useActiveLogs, useTracker } from "@/lib/tracker/store";
@@ -24,10 +28,11 @@ import type { Composer } from "@/components/joni/types";
 import { EmptyState, TopBar, choiceClass } from "@/components/joni/ui";
 
 const RANGES = [
-  { id: 1, label: "Today" },
-  { id: 7, label: "7 days" },
-  { id: 14, label: "14 days" },
-] as const;
+  { id: "24h" as const, label: "Last 24h" },
+  { id: 1 as const, label: "Today" },
+  { id: 7 as const, label: "7 days" },
+  { id: 14 as const, label: "14 days" },
+];
 
 const FILTERS: { id: ReportFilter; label: string }[] = [
   { id: "all", label: "All" },
@@ -79,11 +84,32 @@ export function OverviewScreen({ now, open }: { now: number; open: (composer: Co
   const meds = useTracker((state) => state.meds);
   const unit = useTracker((state) => state.settings.unit);
   const babyName = childName;
-  const days = rangeDays(now, span);
-  const start = days[0] ?? now;
-  const end = now;
+  const rolling = span === "24h";
+  const live = Math.max(now, Date.now());
+  const window = rollingWindow(live);
+  const days = rolling ? [] : rangeDays(now, span);
+  const start = rolling ? window.start : (days[0] ?? now);
+  const end = live;
+  const activeWindow = rolling ? window : undefined;
   const rows = reportRows({ feeds, diapers, doses, meds, start, end, filter, babyName });
-  const adherence = adherenceRows(meds, doses, days, now, babyName);
+  const adherence: AdherenceRow[] = rolling
+    ? meds
+        .filter(
+          (med) => med.active || doses.some((dose) => dose.medId === med.id && dose.at >= start && dose.at <= end),
+        )
+        .map((med) => ({
+          id: med.id,
+          name: med.name,
+          who: med.who === "baby" ? babyName : "Mom",
+          active: med.active,
+          taken: doses.filter((dose) => dose.medId === med.id && dose.at >= start && dose.at <= end).length,
+          expected: null,
+          byDay: [],
+          due: nextDue(med, doses, now),
+        }))
+    : adherenceRows(meds, doses, days, now, babyName);
+  const rollFeeds = feedTotals(feeds, unit, window);
+  const rollDiapers = diaperKindCounts(diapers, window);
   const feedBars = days.map((day) => ({
     key: day,
     label: formatWeekday(day).slice(0, 1),
@@ -94,6 +120,20 @@ export function OverviewScreen({ now, open }: { now: number; open: (composer: Co
     label: formatWeekday(day).slice(0, 1),
     value: onDay(diapers, day).length,
   }));
+  const feedTable = rolling
+    ? [{ key: start, label: "Last 24 hours", totals: rollFeeds }]
+    : [...days].reverse().map((day) => ({
+        key: day,
+        label: formatDay(day, now),
+        totals: feedTotals(onDay(feeds, day), unit),
+      }));
+  const diaperTable = rolling
+    ? [{ key: start, label: "Last 24 hours", counts: rollDiapers }]
+    : [...days].reverse().map((day) => ({
+        key: day,
+        label: formatDay(day, now),
+        counts: diaperKindCounts(onDay(diapers, day)),
+      }));
 
   function openRow(row: (typeof rows)[number]) {
     if (row.feed) open({ kind: "feed", feed: row.feed });
@@ -102,7 +142,17 @@ export function OverviewScreen({ now, open }: { now: number; open: (composer: Co
   }
 
   function text() {
-    return reportText({ babyName, days, unit, feeds, diapers, rows, adherence });
+    return reportText({
+      babyName,
+      days,
+      unit,
+      feeds,
+      diapers,
+      rows,
+      adherence,
+      window: activeWindow,
+      windowLabel: rolling ? "Last 24 hours" : undefined,
+    });
   }
 
   async function copyView() {
@@ -135,7 +185,7 @@ export function OverviewScreen({ now, open }: { now: number; open: (composer: Co
         onSettings={() => open({ kind: "settings" })}
       />
 
-      <div className="mt-4 grid grid-cols-3 gap-2">
+      <div className="mt-4 grid grid-cols-2 gap-2">
         {RANGES.map((item) => (
           <button
             key={item.id}
@@ -163,17 +213,43 @@ export function OverviewScreen({ now, open }: { now: number; open: (composer: Co
       </div>
 
       <div className="mt-4 grid gap-3">
-        <Bars title="Feeds" values={feedBars} color="bg-sage" />
-        <Bars
-          title="Feed time"
-          values={days.map((day) => ({
-            key: day,
-            label: formatWeekday(day).slice(0, 1),
-            value: feedTotals(onDay(feeds, day), unit).minutes,
-          }))}
-          color="bg-sage"
-        />
-        <Bars title="Diapers" values={diaperBars} color="bg-clay" />
+        {rolling ? (
+          <section className="rounded-3xl bg-sage-soft p-4 ring-1 ring-sage">
+            <h2 className="font-serif text-xl font-medium">Last 24 hours</h2>
+            <p className="mt-1 text-sm text-muted">Rolling window, so it still counts across midnight.</p>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+              <div>
+                <p className="font-serif text-2xl font-medium tabular-nums">{rollFeeds.count}</p>
+                <p className="text-xs text-muted">Feeds</p>
+              </div>
+              <div>
+                <p className="font-serif text-2xl font-medium tabular-nums">{formatTotal(rollFeeds.volume, unit)}</p>
+                <p className="text-xs text-muted">Volume</p>
+              </div>
+              <div>
+                <p className="font-serif text-2xl font-medium tabular-nums">{rollFeeds.minutes ? `${rollFeeds.minutes}m` : "—"}</p>
+                <p className="text-xs text-muted">Time</p>
+              </div>
+            </div>
+            <p className="mt-3 text-sm text-muted">
+              Diapers · {rollDiapers.total} total · {rollDiapers.wet} wet · {rollDiapers.dirty} dirty · {rollDiapers.both} both
+            </p>
+          </section>
+        ) : (
+          <>
+            <Bars title="Feeds" values={feedBars} color="bg-sage" />
+            <Bars
+              title="Feed time"
+              values={days.map((day) => ({
+                key: day,
+                label: formatWeekday(day).slice(0, 1),
+                value: feedTotals(onDay(feeds, day), unit).minutes,
+              }))}
+              color="bg-sage"
+            />
+            <Bars title="Diapers" values={diaperBars} color="bg-clay" />
+          </>
+        )}
       </div>
 
       <h2 className="mt-8 font-serif text-xl font-medium">Meds right now</h2>
@@ -210,19 +286,16 @@ export function OverviewScreen({ now, open }: { now: number; open: (composer: Co
             </tr>
           </thead>
           <tbody>
-            {[...days].reverse().map((day) => {
-              const totals = feedTotals(onDay(feeds, day), unit);
-              return (
-                <tr key={day} className="border-t border-line">
-                  <td className="px-3 py-3">{formatDay(day, now)}</td>
-                  <td className="px-3 py-3 tabular-nums">{totals.count}</td>
-                  <td className="px-3 py-3 tabular-nums">
-                    {totals.volume > 0 ? formatAmount(totals.volume, unit) : "—"}
-                  </td>
-                  <td className="px-3 py-3 tabular-nums">{totals.minutes > 0 ? totals.minutes : "—"}</td>
-                </tr>
-              );
-            })}
+            {feedTable.map((row) => (
+              <tr key={row.key} className="border-t border-line">
+                <td className="px-3 py-3">{row.label}</td>
+                <td className="px-3 py-3 tabular-nums">{row.totals.count}</td>
+                <td className="px-3 py-3 tabular-nums">
+                  {row.totals.volume > 0 ? formatAmount(row.totals.volume, unit) : "—"}
+                </td>
+                <td className="px-3 py-3 tabular-nums">{row.totals.minutes > 0 ? row.totals.minutes : "—"}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -239,23 +312,24 @@ export function OverviewScreen({ now, open }: { now: number; open: (composer: Co
             </tr>
           </thead>
           <tbody>
-            {[...days].reverse().map((day) => {
-              const counts = diaperKindCounts(onDay(diapers, day));
-              return (
-                <tr key={day} className="border-t border-line">
-                  <td className="px-3 py-3">{formatDay(day, now)}</td>
-                  <td className="px-3 py-3 tabular-nums">{counts.wet}</td>
-                  <td className="px-3 py-3 tabular-nums">{counts.dirty}</td>
-                  <td className="px-3 py-3 tabular-nums">{counts.both}</td>
-                </tr>
-              );
-            })}
+            {diaperTable.map((row) => (
+              <tr key={row.key} className="border-t border-line">
+                <td className="px-3 py-3">{row.label}</td>
+                <td className="px-3 py-3 tabular-nums">{row.counts.wet}</td>
+                <td className="px-3 py-3 tabular-nums">{row.counts.dirty}</td>
+                <td className="px-3 py-3 tabular-nums">{row.counts.both}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
 
       <h2 className="mt-8 font-serif text-xl font-medium">Medication adherence</h2>
-      <p className="mt-1 text-sm text-muted">Taken compared with the schedule saved now. As-needed meds have no expected count.</p>
+      <p className="mt-1 text-sm text-muted">
+        {rolling
+          ? "Doses logged in the last 24 hours. As-needed meds have no expected count."
+          : "Taken compared with the schedule saved now. As-needed meds have no expected count."}
+      </p>
       {adherence.length === 0 ? (
         <p className="mt-3 text-sm text-muted">No doses in this range.</p>
       ) : (
@@ -274,6 +348,7 @@ export function OverviewScreen({ now, open }: { now: number; open: (composer: Co
                   {row.expected == null ? `${row.taken} taken` : `${row.taken} / ${row.expected}`}
                 </p>
               </div>
+              {row.byDay.length > 0 ? (
               <div className="mt-3 flex gap-1">
                 {row.byDay.map((day) => {
                   const met = day.expected != null && day.taken >= day.expected && day.expected > 0;
@@ -291,6 +366,9 @@ export function OverviewScreen({ now, open }: { now: number; open: (composer: Co
                   );
                 })}
               </div>
+              ) : rolling ? (
+                <p className="mt-2 text-sm text-muted">In the last 24 hours</p>
+              ) : null}
             </article>
           ))}
         </div>

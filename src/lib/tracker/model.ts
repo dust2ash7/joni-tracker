@@ -351,10 +351,23 @@ export function feedMeta(feed: Feed) {
   return bits.join(" · ");
 }
 
-export function feedTotals(feeds: Feed[], unit: Unit) {
+export type TimeWindow = { start: number; end: number };
+
+export const DAY_MS = 24 * 60 * 60 * 1000;
+
+export function inWindow<T extends { at: number }>(items: T[], start: number, end: number) {
+  return items.filter((item) => item.at >= start && item.at <= end);
+}
+
+export function rollingWindow(now: number, ms = DAY_MS): TimeWindow {
+  return { start: now - ms, end: now };
+}
+
+export function feedTotals(feeds: Feed[], unit: Unit, window?: TimeWindow) {
+  const list = window ? inWindow(feeds, window.start, window.end) : feeds;
   let volume = 0;
   let seconds = 0;
-  for (const feed of feeds) {
+  for (const feed of list) {
     if (
       feed.amount &&
       feed.unit &&
@@ -364,7 +377,7 @@ export function feedTotals(feeds: Feed[], unit: Unit) {
     }
     seconds += feedSeconds(feed);
   }
-  return { count: feeds.length, volume, minutes: Math.round(seconds / 60), seconds, unit };
+  return { count: list.length, volume, minutes: Math.round(seconds / 60), seconds, unit };
 }
 
 export function diaperTitle(kind: DiaperKind) {
@@ -379,17 +392,18 @@ export function diaperMeta(diaper: Diaper) {
     .join(", ");
 }
 
-export function diaperCounts(diapers: Diaper[]) {
+export function diaperCounts(diapers: Diaper[], window?: TimeWindow) {
+  const list = window ? inWindow(diapers, window.start, window.end) : diapers;
   let wetOnly = 0;
   let dirtyOnly = 0;
   let both = 0;
-  for (const diaper of diapers) {
+  for (const diaper of list) {
     if (diaper.kind === "wet") wetOnly += 1;
     else if (diaper.kind === "dirty") dirtyOnly += 1;
     else both += 1;
   }
   return {
-    total: diapers.length,
+    total: list.length,
     wet: wetOnly + both,
     dirty: dirtyOnly + both,
     both,
@@ -397,9 +411,7 @@ export function diaperCounts(diapers: Diaper[]) {
 }
 
 export function onDay<T extends { at: number }>(items: T[], day: number) {
-  const start = startOfDay(day);
-  const end = endOfDay(day);
-  return items.filter((item) => item.at >= start && item.at <= end);
+  return inWindow(items, startOfDay(day), endOfDay(day));
 }
 
 export function latest<T extends { at: number }>(items: T[]) {
@@ -660,16 +672,17 @@ export function reportRows(input: {
   return rows;
 }
 
-export function diaperKindCounts(diapers: Diaper[]) {
+export function diaperKindCounts(diapers: Diaper[], window?: TimeWindow) {
+  const list = window ? inWindow(diapers, window.start, window.end) : diapers;
   let wet = 0;
   let dirty = 0;
   let both = 0;
-  for (const diaper of diapers) {
+  for (const diaper of list) {
     if (diaper.kind === "wet") wet += 1;
     else if (diaper.kind === "dirty") dirty += 1;
     else both += 1;
   }
-  return { wet, dirty, both, total: diapers.length };
+  return { wet, dirty, both, total: list.length };
 }
 
 export type AdherenceRow = {
@@ -745,20 +758,36 @@ export function reportText(input: {
   diapers: Diaper[];
   rows: ReportRow[];
   adherence: AdherenceRow[];
+  window?: TimeWindow;
+  windowLabel?: string;
 }) {
-  const lines = [`${input.babyName} — overview`, ""];
+  const lines = [`${input.babyName} — ${input.windowLabel ?? "overview"}`, ""];
   lines.push("Feeds");
-  for (const day of input.days) {
-    const totals = feedTotals(onDay(input.feeds, day), input.unit);
+  if (input.window) {
+    const totals = feedTotals(input.feeds, input.unit, input.window);
     const volume = totals.volume > 0 ? ` · ${formatAmount(totals.volume, input.unit)}` : "";
-    lines.push(`• ${formatDay(day, input.days[input.days.length - 1] ?? day)}  ${totals.count} feeds${volume}`);
+    const minutes = totals.minutes > 0 ? ` · ${totals.minutes} min` : "";
+    lines.push(`• ${input.windowLabel ?? "Window"}  ${totals.count} feeds${volume}${minutes}`);
+  } else {
+    for (const day of input.days) {
+      const totals = feedTotals(onDay(input.feeds, day), input.unit);
+      const volume = totals.volume > 0 ? ` · ${formatAmount(totals.volume, input.unit)}` : "";
+      lines.push(`• ${formatDay(day, input.days[input.days.length - 1] ?? day)}  ${totals.count} feeds${volume}`);
+    }
   }
   lines.push("", "Diapers");
-  for (const day of input.days) {
-    const counts = diaperKindCounts(onDay(input.diapers, day));
+  if (input.window) {
+    const counts = diaperKindCounts(input.diapers, input.window);
     lines.push(
-      `• ${formatDay(day, input.days[input.days.length - 1] ?? day)}  ${counts.wet} wet · ${counts.dirty} dirty · ${counts.both} both`,
+      `• ${input.windowLabel ?? "Window"}  ${counts.wet} wet · ${counts.dirty} dirty · ${counts.both} both`,
     );
+  } else {
+    for (const day of input.days) {
+      const counts = diaperKindCounts(onDay(input.diapers, day));
+      lines.push(
+        `• ${formatDay(day, input.days[input.days.length - 1] ?? day)}  ${counts.wet} wet · ${counts.dirty} dirty · ${counts.both} both`,
+      );
+    }
   }
   lines.push("", "Meds");
   if (!input.adherence.length) lines.push("None");

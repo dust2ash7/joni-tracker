@@ -45,6 +45,7 @@ import {
   latest,
   medWho,
   onDay,
+  rollingWindow,
   scheduledMeds,
   suggestNextBreast,
   startOfDay,
@@ -307,7 +308,8 @@ export function FeedsScreen({ now, open }: { now: number; open: (composer: Compo
   const { name, feeds } = useActiveLogs();
   const unit = useTracker((state) => state.settings.unit);
   const today = onDay(feeds, now);
-  const totals = feedTotals(today, unit);
+  const dayTotals = feedTotals(today, unit);
+  const roll = feedTotals(feeds, unit, rollingWindow(Math.max(now, Date.now())));
   const last = latest(feeds);
   const { groups, truncated } = groupByDay(feeds, now);
 
@@ -318,10 +320,17 @@ export function FeedsScreen({ now, open }: { now: number; open: (composer: Compo
         sub={last ? `${name} · last feed ${formatAgo(last.at, now)}` : `${name} · nothing logged yet`}
         onSettings={() => open({ kind: "settings" })}
       />
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        <Stat label="Today" value={String(totals.count)} />
-        <Stat label="Volume" value={formatTotal(totals.volume, unit)} />
-        <Stat label="Time" value={totals.minutes ? `${totals.minutes}m` : "—"} />
+      <p className="mt-4 text-sm font-medium">Last 24 hours</p>
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        <Stat emphasis label="24h feeds" value={String(roll.count)} />
+        <Stat emphasis label="24h volume" value={formatTotal(roll.volume, unit)} />
+        <Stat emphasis label="24h time" value={roll.minutes ? `${roll.minutes}m` : "—"} />
+      </div>
+      <p className="mt-3 text-sm text-muted">Today · calendar day</p>
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        <Stat label="Today" value={String(dayTotals.count)} />
+        <Stat label="Volume" value={formatTotal(dayTotals.volume, unit)} />
+        <Stat label="Time" value={dayTotals.minutes ? `${dayTotals.minutes}m` : "—"} />
       </div>
       <div className="mt-4">
         <FeedForm key={name} heading={`Log a feed · ${name}`} />
@@ -360,7 +369,8 @@ export function FeedsScreen({ now, open }: { now: number; open: (composer: Compo
 export function DiapersScreen({ now, open }: { now: number; open: (composer: Composer) => void }) {
   const { name, diapers } = useActiveLogs();
   const today = onDay(diapers, now);
-  const counts = diaperCounts(today);
+  const dayCounts = diaperCounts(today);
+  const roll = diaperCounts(diapers, rollingWindow(Math.max(now, Date.now())));
   const { groups, truncated } = groupByDay(diapers, now);
 
   return (
@@ -370,10 +380,17 @@ export function DiapersScreen({ now, open }: { now: number; open: (composer: Com
         sub={`${name} · wet, dirty, or both.`}
         onSettings={() => open({ kind: "settings" })}
       />
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        <Stat label="Today" value={String(counts.total)} />
-        <Stat label="Wet" value={String(counts.wet)} />
-        <Stat label="Dirty" value={String(counts.dirty)} />
+      <p className="mt-4 text-sm font-medium">Last 24 hours</p>
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        <Stat emphasis label="24h changes" value={String(roll.total)} />
+        <Stat emphasis label="24h wet" value={String(roll.wet)} />
+        <Stat emphasis label="24h dirty" value={String(roll.dirty)} />
+      </div>
+      <p className="mt-3 text-sm text-muted">Today · calendar day</p>
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        <Stat label="Today" value={String(dayCounts.total)} />
+        <Stat label="Wet" value={String(dayCounts.wet)} />
+        <Stat label="Dirty" value={String(dayCounts.dirty)} />
       </div>
       <div className="mt-4">
         <DiaperForm key={name} heading={`Log a diaper · ${name}`} />

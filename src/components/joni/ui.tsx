@@ -292,10 +292,10 @@ export function EventButton({
   );
 }
 
-export function Stat({ label, value }: { label: string; value: string }) {
+export function Stat({ label, value, emphasis = false }: { label: string; value: string; emphasis?: boolean }) {
   return (
-    <div className="rounded-2xl bg-paper px-2 py-3 text-center ring-1 ring-line">
-      <div className="font-serif text-xl font-medium tabular-nums">{value}</div>
+    <div className={`rounded-2xl px-2 py-3 text-center ring-1 ${emphasis ? "bg-sage-soft ring-sage" : "bg-paper ring-line"}`}>
+      <div className={`font-serif font-medium tabular-nums ${emphasis ? "text-2xl" : "text-xl"}`}>{value}</div>
       <div className="text-xs text-muted">{label}</div>
     </div>
   );
