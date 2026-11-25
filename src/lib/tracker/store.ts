@@ -14,6 +14,7 @@ import {
   type Feed,
   type Medication,
 } from "@/lib/tracker/model";
+import { medsFromStored, reconcileMeds } from "@/lib/tracker/med-persist";
 
 export type ChildId = "alex" | "joni";
 
@@ -53,6 +54,8 @@ type Data = {
   notes: Record<string, DayNote>;
   settings: Settings;
   seeds: string[];
+  /** Ids the user removed. Starter meds and old snapshots must not bring these back. */
+  deletedMedIds: string[];
   timer: FeedTimer | null;
   pending: PendingFeed | null;
   migrated: boolean;
@@ -91,137 +94,15 @@ const defaultSettings: Settings = {
   theme: "system",
 };
 
-/** Nov 2, 2026 clock times from the discharge sheet, as Pacific (UTC−8). */
-function pacific(hour: number, minute: number) {
-  return Date.UTC(2026, 10, 2, hour + 8, minute);
-}
-
-const DISCHARGE_SEED = "discharge-2026-11-02";
-
-const dischargeMeds: Medication[] = [
-  {
-    id: "med-acetaminophen",
-    name: "Acetaminophen",
-    dose: "2 tablets · 500 mg",
-    frequency: { kind: "every", hours: 6 },
-    notes: "As needed for pain or fever. Do not exceed 6 tablets in 24 hours.",
-    active: true,
-  },
-  {
-    id: "med-ibuprofen",
-    name: "Ibuprofen",
-    dose: "1 tablet · 600 mg",
-    frequency: { kind: "every", hours: 6 },
-    notes: "As needed for pain. Take with food.",
-    active: true,
-  },
-  {
-    id: "med-oxycodone",
-    name: "Oxycodone",
-    dose: "1 tablet · 5 mg",
-    frequency: { kind: "every", hours: 4 },
-    notes: "As needed for pain.",
-    active: true,
-  },
-  {
-    id: "med-clearlax",
-    name: "ClearLax",
-    dose: "17 g",
-    frequency: { kind: "every", hours: 12 },
-    notes: "As needed for constipation, up to twice a day. Mix in a non-carbonated liquid.",
-    active: true,
-  },
-  {
-    id: "med-prenatal",
-    name: "Prenatal",
-    dose: "1 capsule",
-    frequency: { kind: "times", times: ["08:00"] },
-    notes: "Once a day. Change the time if 8:00am isn’t when you take it.",
-    active: true,
-  },
-];
-
-const EXTRA_SEED = "extra-2026-11-02";
-
-const extraMeds: Medication[] = [
-  {
-    id: "med-aspirin",
-    name: "Aspirin",
-    dose: "81 mg chew tab",
-    frequency: { kind: "asneeded" },
-    notes: "As needed.",
-    active: true,
-  },
-  {
-    id: "med-sertraline",
-    name: "Sertraline",
-    dose: "1 tablet · 25 mg",
-    frequency: { kind: "times", times: ["08:00"] },
-    notes: "Once a day. Change the time if 8:00am isn’t when you take it.",
-    active: true,
-  },
-];
-
-const dischargeDoses: Dose[] = [
-  {
-    id: "dose-acetaminophen-1",
-    medId: "med-acetaminophen",
-    name: "Acetaminophen",
-    dose: "2 tablets · 500 mg",
-    at: pacific(8, 31),
-  },
-  {
-    id: "dose-ibuprofen-1",
-    medId: "med-ibuprofen",
-    name: "Ibuprofen",
-    dose: "1 tablet · 600 mg",
-    at: pacific(7, 31),
-  },
-  {
-    id: "dose-oxycodone-1",
-    medId: "med-oxycodone",
-    name: "Oxycodone",
-    dose: "1 tablet · 5 mg",
-    at: pacific(1, 33),
-  },
-];
-
-const BABY_SEED = "baby-d3-2026-11-02";
-
-const babyMeds: Medication[] = [
-  {
-    id: "med-vitamin-d3",
-    name: "Super Daily D3",
-    dose: "1 drop · 10 mcg (400 IU)",
-    frequency: { kind: "times", times: ["08:00"] },
-    notes: "For Joni. Give 1 drop by mouth once a day. Change the time if 8:00am isn’t when you give it.",
-    active: true,
-    who: "baby",
-  },
-];
+const DELETED_MEDS_KEY = "nest_deleted_meds";
 
 function withDischargeSeed(data: Partial<Data>) {
-  let seeds = data.seeds ?? [];
-  let meds = data.meds ?? [];
-  let doses = data.doses ?? [];
-  if (!seeds.includes(DISCHARGE_SEED)) {
-    const medIds = new Set(dischargeMeds.map((med) => med.id));
-    const doseIds = new Set(dischargeDoses.map((dose) => dose.id));
-    meds = [...dischargeMeds, ...meds.filter((med) => !medIds.has(med.id))];
-    doses = [...dischargeDoses, ...doses.filter((dose) => !doseIds.has(dose.id))];
-    seeds = [...seeds, DISCHARGE_SEED];
-  }
-  if (!seeds.includes(EXTRA_SEED)) {
-    const have = new Set(meds.map((med) => med.id));
-    meds = [...extraMeds.filter((med) => !have.has(med.id)), ...meds];
-    seeds = [...seeds, EXTRA_SEED];
-  }
-  if (!seeds.includes(BABY_SEED)) {
-    const have = new Set(meds.map((med) => med.id));
-    meds = [...meds, ...babyMeds.filter((med) => !have.has(med.id))];
-    seeds = [...seeds, BABY_SEED];
-  }
-  return { meds, doses, seeds };
+  return reconcileMeds({
+    meds: data.meds ?? [],
+    doses: data.doses ?? [],
+    seeds: data.seeds ?? [],
+    deletedMedIds: data.deletedMedIds ?? [],
+  });
 }
 
 function emptyLogs(): Record<ChildId, ChildLog> {
@@ -249,6 +130,15 @@ function readJson(key: string) {
   }
 }
 
+function readDeletedMedIds() {
+  const raw = readJson(DELETED_MEDS_KEY);
+  return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string" && id.length > 0) : [];
+}
+
+function writeDeletedMedIds(ids: string[]) {
+  localStorage.setItem(DELETED_MEDS_KEY, JSON.stringify([...new Set(ids)]));
+}
+
 function asList<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
@@ -270,11 +160,20 @@ function assembleState(): Data {
     notes?: Record<string, DayNote>;
     settings?: Partial<Settings>;
     seeds?: string[];
+    deletedMedIds?: string[];
     timer?: FeedTimer | null;
     pending?: PendingFeed | null;
     migrated?: boolean;
   };
-  const shared = (readJson("shared_meds") ?? {}) as { meds?: Medication[]; doses?: Dose[] };
+  const sharedRaw = localStorage.getItem("shared_meds");
+  let shared: { meds?: Medication[]; doses?: Dose[] } | null = null;
+  if (sharedRaw) {
+    const parsed = readJson("shared_meds");
+    shared =
+      parsed && typeof parsed === "object"
+        ? (parsed as { meds?: Medication[]; doses?: Dose[] })
+        : { meds: [], doses: [] };
+  }
   const legacyWrap = readJson("joni-tracker-v1") as { state?: LegacyState } | null;
   const legacy = (legacyWrap?.state ?? {}) as LegacyState;
   const logs = emptyLogs();
@@ -286,10 +185,15 @@ function assembleState(): Data {
     feeds: mergeById(asList<Feed>(readJson("joni_feedings")), asList<Feed>(legacy.feeds)),
     diapers: mergeById(asList<Diaper>(readJson("joni_diapers")), asList<Diaper>(legacy.diapers)),
   };
-  const seededMeds = withDischargeSeed({
-    meds: mergeById(asList<Medication>(shared.meds), asList<Medication>(legacy.meds)),
-    doses: mergeById(asList<Dose>(shared.doses), asList<Dose>(legacy.doses)),
+  const deletedMedIds = [
+    ...new Set([...(meta.deletedMedIds ?? []), ...(legacy.deletedMedIds ?? []), ...readDeletedMedIds()]),
+  ];
+  const seededMeds = medsFromStored({
+    shared,
+    legacyMeds: asList<Medication>(legacy.meds),
+    legacyDoses: asList<Dose>(legacy.doses),
     seeds: [...new Set([...(meta.seeds ?? []), ...(legacy.seeds ?? [])])],
+    deletedMedIds,
   });
   return {
     child: isChild(meta.child) ? meta.child : "joni",
@@ -299,6 +203,7 @@ function assembleState(): Data {
     notes: { ...(legacy.notes ?? {}), ...(meta.notes ?? {}) },
     settings: { ...defaultSettings, ...(legacy.settings ?? {}), ...(meta.settings ?? {}) },
     seeds: seededMeds.seeds,
+    deletedMedIds: seededMeds.deletedMedIds,
     timer: meta.timer?.startedAt ? meta.timer : null,
     pending: meta.pending?.durationSec ? meta.pending : null,
     migrated: true,
@@ -312,6 +217,8 @@ function writeState(state: Data) {
   localStorage.setItem("alex_diapers", JSON.stringify(logs.alex?.diapers ?? []));
   localStorage.setItem("joni_diapers", JSON.stringify(logs.joni?.diapers ?? []));
   localStorage.setItem("shared_meds", JSON.stringify({ meds: state.meds ?? [], doses: state.doses ?? [] }));
+  const deletedMedIds = state.deletedMedIds ?? readDeletedMedIds();
+  writeDeletedMedIds(deletedMedIds);
   localStorage.setItem(
     "nest_meta",
     JSON.stringify({
@@ -319,6 +226,7 @@ function writeState(state: Data) {
       notes: state.notes ?? {},
       settings: state.settings,
       seeds: state.seeds ?? [],
+      deletedMedIds,
       timer: state.timer ?? null,
       pending: state.pending ?? null,
       migrated: true,
@@ -328,9 +236,13 @@ function writeState(state: Data) {
 
 const nestStorage = {
   getItem: () => {
+    const hadLegacy = localStorage.getItem("joni-tracker-v1") != null;
     const state = assembleState();
     const meta = readJson("nest_meta") as { migrated?: boolean } | null;
-    if (!meta?.migrated || readJson("joni-tracker-v1")) writeState(state);
+    if (hadLegacy || !meta?.migrated) {
+      writeState(state);
+      localStorage.removeItem("joni-tracker-v1");
+    }
     return JSON.stringify({ state, version: 1 });
   },
   setItem: (_name: string, value: string) => {
@@ -338,7 +250,15 @@ const nestStorage = {
     writeState(parsed.state ?? (parsed as unknown as Data));
   },
   removeItem: () => {
-    for (const key of ["alex_feedings", "joni_feedings", "alex_diapers", "joni_diapers", "shared_meds", "nest_meta"]) {
+    for (const key of [
+      "alex_feedings",
+      "joni_feedings",
+      "alex_diapers",
+      "joni_diapers",
+      "shared_meds",
+      "nest_meta",
+      DELETED_MEDS_KEY,
+    ]) {
       localStorage.removeItem(key);
     }
   },
@@ -357,6 +277,7 @@ export const useTracker = create<Store>()(
       doses: seeded.doses,
       notes: {},
       seeds: seeded.seeds,
+      deletedMedIds: seeded.deletedMedIds,
       settings: defaultSettings,
       timer: null,
       pending: null,
@@ -502,9 +423,19 @@ export const useTracker = create<Store>()(
       deleteMed: (id) => {
         const prev = get().meds.find((item) => item.id === id);
         if (!prev) return;
-        pendingUndo = () => set((state) => ({ meds: [prev, ...state.meds] }));
+        const deletedMedIds = get().deletedMedIds.includes(id) ? get().deletedMedIds : [...get().deletedMedIds, id];
+        writeDeletedMedIds(deletedMedIds);
+        pendingUndo = () => {
+          const nextDeleted = get().deletedMedIds.filter((item) => item !== id);
+          writeDeletedMedIds(nextDeleted);
+          set((state) => ({
+            meds: state.meds.some((item) => item.id === id) ? state.meds : [prev, ...state.meds],
+            deletedMedIds: state.deletedMedIds.filter((item) => item !== id),
+          }));
+        };
         set((state) => ({
           meds: state.meds.filter((item) => item.id !== id),
+          deletedMedIds,
           toast: toastOf("Medication removed", true),
         }));
       },
@@ -638,6 +569,7 @@ export const useTracker = create<Store>()(
         notes: state.notes,
         settings: state.settings,
         seeds: state.seeds,
+        deletedMedIds: state.deletedMedIds,
         timer: state.timer,
         pending: state.pending,
         migrated: true,
@@ -657,6 +589,7 @@ export const useTracker = create<Store>()(
           doses: next.doses,
           notes: data.notes ?? {},
           seeds: next.seeds,
+          deletedMedIds: next.deletedMedIds,
           settings: { ...defaultSettings, ...data.settings },
           timer: data.timer ?? null,
           pending: data.pending ?? null,
